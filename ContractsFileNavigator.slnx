@@ -1,3 +1,14 @@
 <Solution>
-  <Project Path="ContractsFileNavigator/ContractsFileNavigator.csproj" />
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="AGENTS.md" />
+    <File Path="CHANGELOG.md" />
+    <File Path="README.md" />
+    <File Path="STATUS.md" />
+    <File Path="TODO.md" />
+    <File Path="release/README.txt" />
+  </Folder>
+  <Project Path="ContractsFileNavigator/ContractsFileNavigator.csproj" Id="3675d1bb-c2cc-4d6f-b7a0-a26842ad583c" />
 </Solution>
