@@ -1,5 +1,7 @@
 ﻿using Microsoft.Office.Tools;
 using System;
+using System.Configuration;
+using System.IO;
 using System.Windows.Forms;
 using Excel = Microsoft.Office.Interop.Excel;
 using Office = Microsoft.Office.Core;
@@ -18,9 +20,14 @@ namespace ContractsFileNavigator
         /// <summary>Only a saved workbook with this file name gets the pane.</summary>
         private const string ContractsFileName = "Contracts.xlsx";
 
-        /// <summary>Saved widths are clamped to this range on both save and load.</summary>
-        private const int MinPaneWidth = 100;
-        private const int MaxPaneWidth = 800;
+        /// <summary>Pane width in points when no width has been saved. Points already scale with DPI.</summary>
+        private const int DefaultPaneWidth = 150;
+
+        /// <summary>
+        /// Ceiling for saved widths, on both save and load, to reject a garbage value in the settings file.
+        /// There is no floor: Excel enforces its own minimum whenever a width is set.
+        /// </summary>
+        private const int MaxPaneWidth = 400;
 
         /// <summary>
         /// Registry name of the general-purpose Sheet Navigator add-in. Both add-ins manage the
@@ -28,14 +35,18 @@ namespace ContractsFileNavigator
         /// </summary>
         private const string SheetNavigatorProgId = "SheetNavigator";
 
-        private int? cachedDefaultWidth = null;
-
         /// <summary>The pane and its list, created on the Contracts window while the file is open.</summary>
         private CustomTaskPane pane;
         private ContractsFileNavigatorControl control;
 
         /// <summary>Delays the width save until the user has stopped dragging the pane border.</summary>
         private readonly Timer resizeSaveTimer = new Timer { Interval = 500 };
+
+        /// <summary>
+        /// Excel raises no event when a sheet tab is dragged to a new position, so the visible pane
+        /// re-checks the sheet list once a second. Only a changed list triggers a rebuild.
+        /// </summary>
+        private readonly Timer refreshTimer = new Timer { Interval = 1000 };
 
         /// <summary>
         /// Set while the Contracts file is closing, so a resize raised by the teardown is not saved.
@@ -49,8 +60,10 @@ namespace ContractsFileNavigator
         {
             try
             {
+                Diagnostics.HookUnhandledExceptions();
+
                 UpgradeSettingsIfNeeded();
-                if (!Properties.Settings.Default.Enabled) return;
+                if (!ReadSetting(() => Properties.Settings.Default.Enabled)) return;
 
                 if (IsSheetNavigatorInstalled())
                 {
@@ -61,6 +74,8 @@ namespace ContractsFileNavigator
                 }
 
                 resizeSaveTimer.Tick += new EventHandler(ResizeSaveTimer_Tick);
+                refreshTimer.Tick += new EventHandler(RefreshTimer_Tick);
+                refreshTimer.Start();
 
                 this.Application.WorkbookOpen += new Excel.AppEvents_WorkbookOpenEventHandler(Application_WorkbookOpen);
                 this.Application.WorkbookActivate += new Excel.AppEvents_WorkbookActivateEventHandler(Application_WorkbookActivate);
@@ -71,6 +86,7 @@ namespace ContractsFileNavigator
             }
             catch (Exception ex)
             {
+                Diagnostics.Write("Startup failed: " + ex);
                 MessageBox.Show($"Contracts File Navigator failed to initialize components.\n\nError Details: {ex.Message}",
                                 "Initialization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -85,20 +101,69 @@ namespace ContractsFileNavigator
         {
             try
             {
-                Properties.Settings settings = Properties.Settings.Default;
-                if (!settings.UpgradeRequired) return;
+                if (!ReadSetting(() => Properties.Settings.Default.UpgradeRequired)) return;
 
-                settings.Upgrade();
-                settings.UpgradeRequired = false;
+                Properties.Settings.Default.Upgrade();
+                Properties.Settings.Default.UpgradeRequired = false;
 
                 // Assigning a setting marks it changed, which is what makes Save write it out
-                bool enabled = settings.Enabled;
-                settings.Enabled = enabled;
-                settings.LastWidth = SavedWidth();
+                bool enabled = ReadSetting(() => Properties.Settings.Default.Enabled);
+                Properties.Settings.Default.Enabled = enabled;
+                Properties.Settings.Default.LastWidth = SavedWidth();
 
-                settings.Save();
+                SaveSettings();
             }
             catch { /* Nothing to carry over */ }
+        }
+
+        /// <summary>
+        /// Reads a setting, resetting the settings file first if .NET reports it unreadable.
+        /// </summary>
+        private static T ReadSetting<T>(Func<T> read)
+        {
+            try
+            {
+                return read();
+            }
+            catch (ConfigurationErrorsException ex)
+            {
+                RecoverSettings(ex);
+                return read();
+            }
+        }
+
+        /// <summary>
+        /// Saves the settings, resetting the settings file first if .NET reports it unreadable.
+        /// </summary>
+        private static void SaveSettings()
+        {
+            try
+            {
+                Properties.Settings.Default.Save();
+            }
+            catch (ConfigurationErrorsException ex)
+            {
+                RecoverSettings(ex);
+                Properties.Settings.Default.Save();
+            }
+        }
+
+        /// <summary>
+        /// A user.config left truncated by a crash makes every settings call throw until it is deleted.
+        /// Deletes it and reloads the defaults.
+        /// </summary>
+        private static void RecoverSettings(ConfigurationErrorsException ex)
+        {
+            string file = ex.Filename ?? (ex.InnerException as ConfigurationErrorsException)?.Filename;
+            Diagnostics.Write("Settings file unreadable, resetting it: " + (file ?? "(unknown path)") + " | " + ex.Message);
+
+            try
+            {
+                if (!string.IsNullOrEmpty(file) && File.Exists(file)) File.Delete(file);
+            }
+            catch { }
+
+            Properties.Settings.Default.Reload();
         }
 
         /// <summary>
@@ -119,42 +184,17 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Default pane width, scaled from 150 on a 1920-wide screen and kept within 120-400.
-        /// </summary>
-        private int EnsureResponsiveDefaultWidth()
-        {
-            if (cachedDefaultWidth.HasValue) return cachedDefaultWidth.Value;
-
-            int defaultWidth = 150;
-
-            try
-            {
-                int screenWidth = Screen.PrimaryScreen.Bounds.Width;
-                double targetScalePercentage = defaultWidth / 1920.0;
-                int calculatedWidth = (int)Math.Round(screenWidth * targetScalePercentage);
-
-                cachedDefaultWidth = Math.Max(120, Math.Min(400, calculatedWidth));
-            }
-            catch
-            {
-                cachedDefaultWidth = defaultWidth;
-            }
-
-            return cachedDefaultWidth.Value;
-        }
-
-        /// <summary>
         /// The saved pane width, clamped, or the default width if none has been saved yet.
         /// </summary>
-        private int SavedWidth()
+        private static int SavedWidth()
         {
-            int width = Properties.Settings.Default.LastWidth;
-            return width > 0 ? ClampPaneWidth(width) : EnsureResponsiveDefaultWidth();
+            return ClampPaneWidth(ReadSetting(() => Properties.Settings.Default.LastWidth));
         }
 
         private static int ClampPaneWidth(int width)
         {
-            return Math.Max(MinPaneWidth, Math.Min(MaxPaneWidth, width));
+            if (width <= 0) return DefaultPaneWidth;
+            return Math.Min(MaxPaneWidth, width);
         }
 
         /// <summary>
@@ -216,7 +256,8 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Keeps the list's highlight on the active sheet.
+        /// Keeps the list's highlight on the active sheet. Each window has its own active sheet,
+        /// so only a change in the pane's own window can also change the list.
         /// </summary>
         private void Application_SheetActivate(object sheet)
         {
@@ -230,9 +271,33 @@ namespace ContractsFileNavigator
                 // Working in the file again means any pending close was cancelled
                 isPaneClosing = false;
 
-                if (pane.Visible) control.RefreshWorksheets(workbook);
+                if (!IsAlive() || !pane.Visible) return;
+
+                if (IsPaneWindowActive())
+                {
+                    control.RefreshWorksheets(workbook);
+                }
+                else
+                {
+                    control.HighlightActiveSheet();
+                }
             }
             catch { /* Chart sheets and templates can refuse the refresh */ }
+        }
+
+        /// <summary>
+        /// Once a second, lets the visible pane catch sheet reorders that raise no Excel event.
+        /// </summary>
+        private void RefreshTimer_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                if (pane == null || isPaneClosing || this.Application.Ready == false) return;
+                if (!IsAlive() || !pane.Visible) return;
+
+                control.RefreshQuietly();
+            }
+            catch { /* Excel is busy; try again next tick */ }
         }
 
         /// <summary>
@@ -254,6 +319,7 @@ namespace ContractsFileNavigator
 
             ContractsFileNavigatorControl newControl = new ContractsFileNavigatorControl
             {
+                Window = window,
                 Workbook = workbook
             };
 
@@ -305,20 +371,44 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
+        /// False once Excel or VSTO has disposed the pane, for example because its window closed.
+        /// </summary>
+        private bool IsAlive()
+        {
+            try
+            {
+                bool unused = pane.Visible;
+                return !control.IsDisposed;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// True while the pane's own window is Excel's active window.
+        /// </summary>
+        private bool IsPaneWindowActive()
+        {
+            try
+            {
+                Excel.Window active = this.Application.ActiveWindow;
+                return active != null && control.Window != null && active.Hwnd == control.Window.Hwnd;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
         /// Restarts the save delay on every resize, so a drag is written once when it ends.
         /// </summary>
         private void NavigatorControl_Resize(object sender, EventArgs e)
         {
-            if (pane == null || isPaneClosing) return;
-
             try
             {
-                if (!pane.Visible) return;
-            }
-            catch { return; }
+                if (pane == null || isPaneClosing || !IsAlive() || !pane.Visible) return;
 
-            resizeSaveTimer.Stop();
-            resizeSaveTimer.Start();
+                resizeSaveTimer.Stop();
+                resizeSaveTimer.Start();
+            }
+            catch { /* Excel is busy */ }
         }
 
         /// <summary>
@@ -326,12 +416,11 @@ namespace ContractsFileNavigator
         /// </summary>
         private void ResizeSaveTimer_Tick(object sender, EventArgs e)
         {
-            resizeSaveTimer.Stop();
-            if (pane == null || isPaneClosing) return;
-
             try
             {
-                if (!pane.Visible) return;
+                resizeSaveTimer.Stop();
+                if (pane == null || isPaneClosing || !IsAlive() || !pane.Visible) return;
+
                 SaveWidth(pane.Width);
             }
             catch { /* Excel is busy */ }
@@ -340,13 +429,13 @@ namespace ContractsFileNavigator
         /// <summary>
         /// Records the width, clamped, unless it is already on file.
         /// </summary>
-        private void SaveWidth(int paneWidth)
+        private static void SaveWidth(int paneWidth)
         {
             int width = ClampPaneWidth(paneWidth);
-            if (Properties.Settings.Default.LastWidth == width) return;
+            if (ReadSetting(() => Properties.Settings.Default.LastWidth) == width) return;
 
             Properties.Settings.Default.LastWidth = width;
-            Properties.Settings.Default.Save();
+            SaveSettings();
         }
 
         /// <summary>
@@ -382,6 +471,8 @@ namespace ContractsFileNavigator
         {
             resizeSaveTimer.Stop();
             resizeSaveTimer.Dispose();
+            refreshTimer.Stop();
+            refreshTimer.Dispose();
 
             this.Application.WorkbookOpen -= Application_WorkbookOpen;
             this.Application.WorkbookActivate -= Application_WorkbookActivate;
