@@ -13,13 +13,13 @@ This is the single-file edition of [Sheet Navigator](https://github.com/jako479/
 
 1. Download the latest release ZIP and extract it. Don't run the installer from inside the ZIP window.
 2. Close Excel and run `setup.exe`. Click **Install** when Office asks.
-3. Open `Contracts.xlsx`. The pane appears on the left.
+3. Open `Contracts.xlsx`. The pane appears on the right.
 
 ## Use
 
 - The pane opens whenever `Contracts.xlsx` is opened. Close it with its **X**; it comes back the next time the file is opened.
 - Click a sheet in the pane to activate it.
-- The pane width is remembered in your user profile; nothing is written to the workbook.
+- The pane width and side (left or right) are remembered in your user profile; nothing is written to the workbook.
 - To switch the add-in off without uninstalling it, set `Enabled` to `False` in its `user.config` and restart Excel. The file is under `%LOCALAPPDATA%\Microsoft_Corporation`, in the folder whose name starts with `ContractsFileNavigator.vsto`, and is created the first time the add-in runs.
 
 ## Troubleshooting

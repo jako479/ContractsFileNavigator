@@ -37,13 +37,25 @@ namespace ContractsFileNavigator.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("0")]
-        public int LastWidth {
+        [global::System.Configuration.DefaultSettingValueAttribute("150")]
+        public int Width {
             get {
-                return ((int)(this["LastWidth"]));
+                return ((int)(this["Width"]));
             }
             set {
-                this["LastWidth"] = value;
+                this["Width"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("Right")]
+        public string DockPosition {
+            get {
+                return ((string)(this["DockPosition"]));
+            }
+            set {
+                this["DockPosition"] = value;
             }
         }
 

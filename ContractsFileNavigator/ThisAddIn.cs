@@ -11,7 +11,7 @@ namespace ContractsFileNavigator
     /// <summary>
     /// Excel add-in that shows a "Worksheets" task pane listing the sheets of Contracts.xlsx.
     /// The pane opens every time that file is opened. Closing it hides it until the file is
-    /// opened again. The pane width is remembered per user, and the add-in can be switched off
+    /// opened again. The pane width and side are remembered per user, and the add-in can be switched off
     /// by setting <c>Enabled</c> to False in the user settings file (user.config under
     /// %LOCALAPPDATA%\Microsoft_Corporation, in the folder named after ContractsFileNavigator.vsto).
     /// </summary>
@@ -20,8 +20,14 @@ namespace ContractsFileNavigator
         /// <summary>Only a saved workbook with this file name gets the pane.</summary>
         private const string ContractsFileName = "Contracts.xlsx";
 
-        /// <summary>Pane width in points when no width has been saved. Points already scale with DPI.</summary>
+        /// <summary>
+        /// Fallback pane width in points when the saved width is not a positive number. The normal
+        /// default is the Width setting's own default value; points already scale with DPI.
+        /// </summary>
         private const int DefaultPaneWidth = 150;
+
+        /// <summary>Fallback side when the saved DockPosition is neither Left nor Right.</summary>
+        private const Office.MsoCTPDockPosition DefaultDockPosition = Office.MsoCTPDockPosition.msoCTPDockPositionRight;
 
         /// <summary>
         /// Ceiling for saved widths, on both save and load, to reject a garbage value in the settings file.
@@ -109,7 +115,8 @@ namespace ContractsFileNavigator
                 // Assigning a setting marks it changed, which is what makes Save write it out
                 bool enabled = ReadSetting(() => Properties.Settings.Default.Enabled);
                 Properties.Settings.Default.Enabled = enabled;
-                Properties.Settings.Default.LastWidth = SavedWidth();
+                Properties.Settings.Default.Width = SavedWidth();
+                Properties.Settings.Default.DockPosition = DockPositionName(SavedDockPosition());
 
                 SaveSettings();
             }
@@ -188,13 +195,50 @@ namespace ContractsFileNavigator
         /// </summary>
         private static int SavedWidth()
         {
-            return ClampPaneWidth(ReadSetting(() => Properties.Settings.Default.LastWidth));
+            return ClampPaneWidth(ReadSetting(() => Properties.Settings.Default.Width));
         }
 
         private static int ClampPaneWidth(int width)
         {
             if (width <= 0) return DefaultPaneWidth;
             return Math.Min(MaxPaneWidth, width);
+        }
+
+        /// <summary>
+        /// The saved side, Left or Right; anything else falls back to the default.
+        /// </summary>
+        private static Office.MsoCTPDockPosition SavedDockPosition()
+        {
+            string saved = ReadSetting(() => Properties.Settings.Default.DockPosition);
+            return string.Equals(saved, "Left", StringComparison.OrdinalIgnoreCase)
+                ? Office.MsoCTPDockPosition.msoCTPDockPositionLeft
+                : DefaultDockPosition;
+        }
+
+        /// <summary>
+        /// "Left" or "Right" for a side-docked position, null for floating or anything else.
+        /// </summary>
+        private static string DockPositionName(Office.MsoCTPDockPosition position)
+        {
+            switch (position)
+            {
+                case Office.MsoCTPDockPosition.msoCTPDockPositionLeft: return "Left";
+                case Office.MsoCTPDockPosition.msoCTPDockPositionRight: return "Right";
+                default: return null;
+            }
+        }
+
+        /// <summary>
+        /// Records the side the pane is docked on. Floating and other positions are not recorded.
+        /// </summary>
+        private static void SaveDockPosition(Office.MsoCTPDockPosition position)
+        {
+            string name = DockPositionName(position);
+            if (name == null) return;
+            if (string.Equals(ReadSetting(() => Properties.Settings.Default.DockPosition), name, StringComparison.Ordinal)) return;
+
+            Properties.Settings.Default.DockPosition = name;
+            SaveSettings();
         }
 
         /// <summary>
@@ -310,7 +354,7 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Creates the pane on the workbook's window at the saved width, fills the list, and shows it.
+        /// Creates the pane on the workbook's window at the saved width and side, fills the list, and shows it.
         /// </summary>
         private void CreatePane(Excel.Workbook workbook)
         {
@@ -326,16 +370,17 @@ namespace ContractsFileNavigator
             CustomTaskPane newPane = this.CustomTaskPanes.Add(newControl, "Worksheets", window);
             try
             {
-                newPane.DockPosition = Office.MsoCTPDockPosition.msoCTPDockPositionLeft;
+                newPane.DockPosition = SavedDockPosition();
                 newPane.Width = SavedWidth();
 
                 // Width is meaningless when docked top or bottom, so keep the pane on a side. Excel's
-                // "NoHorizontal" is the restriction compatible with a left-docked pane, despite its name.
+                // "NoHorizontal" is the restriction compatible with a side-docked pane, despite its name.
                 // Optional: a rejected restriction must never stop the pane from working.
                 try { newPane.DockPositionRestrict = Office.MsoCTPDockPositionRestrict.msoCTPDockPositionRestrictNoHorizontal; }
                 catch { }
 
                 newControl.Resize += new EventHandler(NavigatorControl_Resize);
+                newPane.DockPositionChanged += new EventHandler(Pane_DockPositionChanged);
             }
             catch
             {
@@ -353,7 +398,7 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Drops the pane. The resize handler is unhooked first so the removal saves nothing.
+        /// Drops the pane. Its handlers are unhooked first so the removal saves nothing.
         /// </summary>
         private void RemovePane()
         {
@@ -367,6 +412,7 @@ namespace ContractsFileNavigator
             resizeSaveTimer.Stop();
 
             try { oldControl.Resize -= NavigatorControl_Resize; } catch { }
+            try { oldPane.DockPositionChanged -= Pane_DockPositionChanged; } catch { }
             try { this.CustomTaskPanes.Remove(oldPane); } catch { /* Already disposed with its window */ }
         }
 
@@ -427,14 +473,28 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
+        /// Saves the new side when the user docks the pane left or right.
+        /// </summary>
+        private void Pane_DockPositionChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                if (pane == null || isPaneClosing || !IsAlive()) return;
+
+                SaveDockPosition(pane.DockPosition);
+            }
+            catch { /* Excel is busy */ }
+        }
+
+        /// <summary>
         /// Records the width, clamped, unless it is already on file.
         /// </summary>
         private static void SaveWidth(int paneWidth)
         {
             int width = ClampPaneWidth(paneWidth);
-            if (ReadSetting(() => Properties.Settings.Default.LastWidth) == width) return;
+            if (ReadSetting(() => Properties.Settings.Default.Width) == width) return;
 
-            Properties.Settings.Default.LastWidth = width;
+            Properties.Settings.Default.Width = width;
             SaveSettings();
         }
 
