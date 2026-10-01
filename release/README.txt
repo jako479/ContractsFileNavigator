@@ -31,7 +31,7 @@ STEP 3: USE IT
 * To switch the add-in off without uninstalling it, set Enabled
   to False in its user.config (under %LOCALAPPDATA%\
   Microsoft_Corporation, in the folder whose name starts with
-  ContractsFileNavigator.vsto) and restart Excel.
+  ContractsFileNavigator.vs) and restart Excel.
 
 REQUIREMENTS
 ------------

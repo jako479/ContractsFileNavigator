@@ -10,13 +10,15 @@ Everything lives in the user's settings, never in the workbook.
   `Floating` (Excel's own names). Starts at `Right`.
 - **Width**: the width in points the pane was last left at, capped at 400.
   Starts at 150.
-- **Height**: the height in points the pane was last left at while floating.
-  Starts at 400. A docked pane is stretched to the window, so docking leaves
-  this alone.
+- **Height**: the height in points the pane was last left at while floating,
+  capped at 1200. Starts at 400. A docked pane is stretched to the window, so
+  docking leaves this alone.
 - **Enabled**: `False` switches the add-in off.
 - A value that cannot be read falls back to its default: dock position to
-  `Right`, width to 150, height to 400. A settings file .NET cannot read at
-  all is deleted and starts over.
+  `Right`, width to 150, height to 400. A settings file .NET reports as
+  corrupt is deleted and starts over, provided it is the add-in's own
+  user.config in the user's profile; any other settings failure is logged and
+  leaves the file alone.
 - After an Office update the settings are carried over from the previous
   Excel build's folder.
 - Every setting is written on the first run, so the file lists them all for
@@ -37,7 +39,8 @@ Everything lives in the user's settings, never in the workbook.
 
 **Applied to the pane**: dock position and width when the pane is created on
 file open, plus height if it starts floating; and height again whenever the
-pane floats. Nothing else is ever written from the settings back to the pane.
+pane floats, once the drag has settled. Nothing else is ever written from the
+settings back to the pane.
 
 **Saved from the pane**: dock position and width on every dock, float or
 resize, and height too while the pane is floating. Docking never touches the
@@ -51,13 +54,18 @@ Nothing is written. The pane stays hidden until the file is opened again.
 
 **Pane docked or floated**
 
-A pane that just floated is given the saved height first. Then the pane's
-dock position and width are written, and its height if it is now floating.
+A pane docked left or right is written at once: its dock position and width.
 Width is written too because Excel may change it when docking or floating.
+A pane that just floated is not written yet; Excel rejects property sets
+inside the dock event and may still resize the pane as the drag ends, so it
+is handled by the resize rule below once the drag settles.
 
 **Pane resized** (written once the drag settles, floating or docked)
 
-Writes the pane's dock position and width, and its height if it is floating.
+A pane that has just floated is given the saved height first; a height Excel
+rejects is logged and the pane keeps Excel's, which is then what is written.
+Then the pane's dock position and width are written, and its height if it is
+floating.
 
 A dock, float or resize event that left the pane exactly as last written
 (for example the layout event Excel raises right after the pane is shown)
@@ -76,18 +84,27 @@ height.
 - **Workbook activated**: `Contracts.xlsx` gets a pane if it has none; a pane
   the user closed stays closed. A cancelled close is forgotten.
 - **Workbook or window deactivated**: nothing.
+- **Pane window closed** while the file stays open in another window: the
+  dead pane is dropped on the next refresh tick, and the file's first window
+  gets a fresh pane if the file is active.
 - **Workbook closing**: the pane is flagged as closing, so the layout events
   of the teardown write nothing. The pane is replaced when the file is next
-  opened.
-- **Workbook saved**: nothing.
+  opened. If Excel's save prompt cancels the close, the flag is cleared by the
+  next refresh tick once Excel answers again, or sooner by a workbook or sheet
+  activation.
+- **Workbook saved**: a Save As that gives a workbook the Contracts name gets
+  it a pane (a pane the user closed stays closed); a Save As that takes the
+  name away from the pane's workbook removes the pane. A plain save changes
+  nothing.
 - **Sheet activated**: the pane re-highlights its window's active sheet; if
   its window is the active one, it also refreshes its list.
 - **Excel closes**: timers stop, events unhook, nothing is written.
 
 ## Worksheet list
 
-The list shows the workbook's visible sheets, in tab order. Hidden and very
-hidden sheets are not listed.
+The list shows the workbook's visible worksheets, in tab order. Hidden and
+very hidden sheets are not listed, and neither are chart sheets; while a chart
+sheet is active nothing is highlighted.
 
 **When it refreshes**
 

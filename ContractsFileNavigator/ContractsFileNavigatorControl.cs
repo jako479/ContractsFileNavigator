@@ -7,7 +7,7 @@ using Excel = Microsoft.Office.Interop.Excel;
 namespace ContractsFileNavigator
 {
     /// <summary>
-    /// The pane's content: a list of the workbook's visible sheets. Clicking a name activates
+    /// The pane's content: a list of the workbook's visible worksheets. Clicking a name activates
     /// that sheet in this pane's own window, so several windows on one workbook stay independent.
     /// </summary>
     public partial class ContractsFileNavigatorControl : UserControl
@@ -32,21 +32,27 @@ namespace ContractsFileNavigator
         /// </summary>
         internal Excel.Workbook Workbook { get; set; }
 
+        /// <summary>
+        /// The workbook to list: the one this pane was created for, else Excel's active workbook.
+        /// </summary>
         private Excel.Workbook TargetWorkbook
         {
             get { return Workbook ?? Globals.ThisAddIn.Application.ActiveWorkbook; }
         }
 
+        /// <summary>
+        /// Builds the list and hooks its mouse and keyboard events.
+        /// </summary>
         public ContractsFileNavigatorControl()
         {
             InitializeComponent();
 
             // A single click selects and jumps; keys are swallowed so the highlight can only move by mouse
-            this.WorksheetList.SelectedIndexChanged += new EventHandler(WorksheetList_SelectedIndexChanged);
-            this.WorksheetList.KeyDown += new KeyEventHandler(WorksheetList_KeyDown);
+            this.worksheetList.SelectedIndexChanged += new EventHandler(WorksheetList_SelectedIndexChanged);
+            this.worksheetList.KeyDown += new KeyEventHandler(WorksheetList_KeyDown);
 
             // Excel raises no event for a sheet rename or reorder, so check as the pointer arrives
-            this.WorksheetList.MouseEnter += new EventHandler(WorksheetList_MouseEnter);
+            this.worksheetList.MouseEnter += new EventHandler(WorksheetList_MouseEnter);
         }
 
         /// <summary>
@@ -62,15 +68,15 @@ namespace ContractsFileNavigator
             {
                 RunWithoutJumping(() =>
                 {
-                    this.WorksheetList.BeginUpdate();
+                    this.worksheetList.BeginUpdate();
                     try
                     {
-                        this.WorksheetList.Items.Clear();
-                        foreach (string name in names) this.WorksheetList.Items.Add(name);
+                        this.worksheetList.Items.Clear();
+                        foreach (string name in names) this.worksheetList.Items.Add(name);
                     }
                     finally
                     {
-                        this.WorksheetList.EndUpdate();
+                        this.worksheetList.EndUpdate();
                     }
                 });
             }
@@ -79,7 +85,8 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Moves the highlight to this window's active sheet without triggering a jump.
+        /// Moves the highlight to this window's active sheet without triggering a jump. A chart sheet
+        /// is not listed, so it clears the highlight; a stale one would block a click back to that sheet.
         /// </summary>
         public void HighlightActiveSheet()
         {
@@ -92,33 +99,47 @@ namespace ContractsFileNavigator
                     object active = Window != null ? Window.ActiveSheet : TargetWorkbook?.ActiveSheet;
                     if (active is Excel.Worksheet currentSheet)
                     {
-                        this.WorksheetList.SelectedItem = currentSheet.Name;
+                        this.worksheetList.SelectedItem = currentSheet.Name;
+                    }
+                    else
+                    {
+                        this.worksheetList.ClearSelected();
                     }
                 }
-                catch { /* Leave the highlight alone */ }
+                catch (Exception ex) { Diagnostics.Write("Highlight failed: " + ex); }
             });
         }
 
+        /// <summary>
+        /// The names of the workbook's visible worksheets, in tab order.
+        /// </summary>
         private static List<string> VisibleSheetNames(Excel.Workbook workbook)
         {
             List<string> names = new List<string>();
-            foreach (Excel.Worksheet ws in workbook.Worksheets)
+            foreach (Excel.Worksheet worksheet in workbook.Worksheets)
             {
-                if (ws.Visible == Excel.XlSheetVisibility.xlSheetVisible) names.Add(ws.Name);
+                if (worksheet.Visible == Excel.XlSheetVisibility.xlSheetVisible) names.Add(worksheet.Name);
             }
             return names;
         }
 
+        /// <summary>
+        /// True if the list already shows exactly these names in this order. The comparison is
+        /// case-sensitive so a rename that only changed case still counts.
+        /// </summary>
         private bool SameAsList(List<string> names)
         {
-            if (this.WorksheetList.Items.Count != names.Count) return false;
+            if (this.worksheetList.Items.Count != names.Count) return false;
             for (int i = 0; i < names.Count; i++)
             {
-                if (!string.Equals(this.WorksheetList.Items[i] as string, names[i], StringComparison.Ordinal)) return false;
+                if (!string.Equals(this.worksheetList.Items[i] as string, names[i], StringComparison.Ordinal)) return false;
             }
             return true;
         }
 
+        /// <summary>
+        /// Runs a change to the list with the jump-on-select behavior suspended.
+        /// </summary>
         private void RunWithoutJumping(Action action)
         {
             bool wasUpdating = isUpdatingSelection;
@@ -152,7 +173,7 @@ namespace ContractsFileNavigator
                     RefreshWorksheets(workbook);
                 }
             }
-            catch { /* Keep the current list */ }
+            catch (Exception ex) { Diagnostics.Write("Quiet refresh failed: " + ex); }
         }
 
         /// <summary>
@@ -165,15 +186,21 @@ namespace ContractsFileNavigator
             return app.CommandBars.GetEnabledMso("FileNewDefault") == false;
         }
 
+        /// <summary>
+        /// The workbook's worksheet with this name, or null if there is none (it was renamed or removed).
+        /// </summary>
         private static Excel.Worksheet FindSheet(Excel.Workbook workbook, string name)
         {
-            foreach (Excel.Worksheet ws in workbook.Worksheets)
+            foreach (Excel.Worksheet worksheet in workbook.Worksheets)
             {
-                if (string.Equals(ws.Name, name, StringComparison.OrdinalIgnoreCase)) return ws;
+                if (string.Equals(worksheet.Name, name, StringComparison.OrdinalIgnoreCase)) return worksheet;
             }
             return null;
         }
 
+        /// <summary>
+        /// Refreshes as the pointer arrives, so the list is current before a click lands.
+        /// </summary>
         private void WorksheetList_MouseEnter(object sender, EventArgs e)
         {
             RefreshQuietly();
@@ -199,11 +226,12 @@ namespace ContractsFileNavigator
             Excel.Application app = Globals.ThisAddIn.Application;
             bool jumped = false;
             bool? previousScreenUpdating = null;
+            string failure = null;
 
             try
             {
-                if (this.WorksheetList.SelectedItem == null) return;
-                string selectedSheetName = this.WorksheetList.SelectedItem.ToString();
+                if (this.worksheetList.SelectedItem == null) return;
+                string selectedSheetName = this.worksheetList.SelectedItem.ToString();
 
                 Excel.Workbook workbook = TargetWorkbook;
                 if (workbook == null || IsExcelEditing(app)) return;
@@ -222,12 +250,13 @@ namespace ContractsFileNavigator
             }
             catch (COMException ex) when (ex.HResult == ExcelBusyHResult)
             {
-                // Excel refused because it is mid-edit; nothing to report
+                // Excel refused because it is mid-edit; expected, so the user is not told
+                Diagnostics.Write("Jump refused, Excel is busy: " + ex.Message);
             }
             catch (Exception ex)
             {
                 Diagnostics.Write("Jump failed: " + ex);
-                MessageBox.Show($"Could not jump to sheet: {ex.Message}", "Navigation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                failure = ex.Message;
             }
             finally
             {
@@ -235,10 +264,16 @@ namespace ContractsFileNavigator
                 if (previousScreenUpdating.HasValue)
                 {
                     try { app.ScreenUpdating = previousScreenUpdating.Value; }
-                    catch { }
+                    catch (Exception ex) { Diagnostics.Write("ScreenUpdating restore failed: " + ex); }
                 }
 
                 if (!jumped) RefreshQuietly();
+            }
+
+            // Only after ScreenUpdating is back on, so Excel repaints while the box is up
+            if (failure != null)
+            {
+                MessageBox.Show($"Could not jump to sheet: {failure}", "Navigation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
     }

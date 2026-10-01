@@ -37,7 +37,7 @@
     <TargetCulture>en</TargetCulture>
     <ApplicationVersion>1.0.0.0</ApplicationVersion>
     <AutoIncrementApplicationRevision>true</AutoIncrementApplicationRevision>
-    <UpdateEnabled>true</UpdateEnabled>
+    <UpdateEnabled>false</UpdateEnabled>
     <UpdateInterval>7</UpdateInterval>
     <UpdateIntervalUnits>days</UpdateIntervalUnits>
     <ProductName>Contracts File Navigator</ProductName>
@@ -243,6 +243,9 @@
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
     </Compile>
     <Compile Include="Diagnostics.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PaneSizeRules.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="ThisAddIn.cs">
