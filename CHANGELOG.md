@@ -7,6 +7,6 @@ What changed for users, grouped by release version. Not a commit log.
 - Initial release.
 - Worksheets pane opens whenever Contracts.xlsx is opened and lists its visible sheets; click to jump.
 - Closing the pane hides it until the file is opened again.
-- Pane width and side (left or right) are remembered.
+- Pane position (left, right or floating) and size are remembered.
 - Can be switched off with the Enabled setting in user.config.
 - Stays idle while Sheet Navigator is installed.

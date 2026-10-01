@@ -26,7 +26,8 @@ STEP 3: USE IT
 --------------
 * Open Contracts.xlsx. The pane appears on the right.
 * Close the pane with its X; it comes back the next time the
-  file is opened. Excel remembers the pane width and side.
+  file is opened. Excel remembers the pane's position (left,
+  right or floating) and size.
 * To switch the add-in off without uninstalling it, set Enabled
   to False in its user.config (under %LOCALAPPDATA%\
   Microsoft_Corporation, in the folder whose name starts with

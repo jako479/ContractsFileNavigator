@@ -60,7 +60,12 @@ by this rule.
 ## Docs
 
 Update project meta as appropriate: STATUS.md, CHANGELOG.md, TODO.md, README.md,
-release/README.txt. CHANGELOG and TODO entries are single-line when possible.
+release/README.txt, DESIGN.md and, where the project has one, ARCHITECTURE.md.
+CHANGELOG and TODO entries are single-line when possible.
+
+After any behavior change, re-read DESIGN.md (and ARCHITECTURE.md if present)
+end to end and update every statement the change affects, not just the section
+nearest the change.
 
 New entries in STATUS.md, CHANGELOG.md and TODO.md go at the top of their
 section, never mid-list or at the bottom.

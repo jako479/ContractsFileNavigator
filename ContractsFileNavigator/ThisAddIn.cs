@@ -11,9 +11,10 @@ namespace ContractsFileNavigator
     /// <summary>
     /// Excel add-in that shows a "Worksheets" task pane listing the sheets of Contracts.xlsx.
     /// The pane opens every time that file is opened. Closing it hides it until the file is
-    /// opened again. The pane width and side are remembered per user, and the add-in can be switched off
-    /// by setting <c>Enabled</c> to False in the user settings file (user.config under
-    /// %LOCALAPPDATA%\Microsoft_Corporation, in the folder named after ContractsFileNavigator.vsto).
+    /// opened again. The pane's position (left, right or floating) and size are remembered per user,
+    /// and the add-in can be switched off by setting <c>Enabled</c> to False in the user settings file
+    /// (user.config under %LOCALAPPDATA%\Microsoft_Corporation, in the folder named after
+    /// ContractsFileNavigator.vsto). See DESIGN.md.
     /// </summary>
     public partial class ThisAddIn
     {
@@ -26,7 +27,13 @@ namespace ContractsFileNavigator
         /// </summary>
         private const int DefaultPaneWidth = 150;
 
-        /// <summary>Fallback side when the saved DockPosition is neither Left nor Right.</summary>
+        /// <summary>
+        /// Fallback floating height in points when the saved height is not a positive number. Only a
+        /// floating pane has a height of its own; a docked pane is stretched to the window.
+        /// </summary>
+        private const int DefaultPaneHeight = 400;
+
+        /// <summary>Fallback position when the saved DockPosition is not Left, Right or Floating.</summary>
         private const Office.MsoCTPDockPosition DefaultDockPosition = Office.MsoCTPDockPosition.msoCTPDockPositionRight;
 
         /// <summary>
@@ -45,7 +52,7 @@ namespace ContractsFileNavigator
         private CustomTaskPane pane;
         private ContractsFileNavigatorControl control;
 
-        /// <summary>Delays the width save until the user has stopped dragging the pane border.</summary>
+        /// <summary>Delays the save until the user has stopped dragging the pane border.</summary>
         private readonly Timer resizeSaveTimer = new Timer { Interval = 500 };
 
         /// <summary>
@@ -55,9 +62,17 @@ namespace ContractsFileNavigator
         private readonly Timer refreshTimer = new Timer { Interval = 1000 };
 
         /// <summary>
-        /// Set while the Contracts file is closing, so a resize raised by the teardown is not saved.
+        /// Set while the Contracts file is closing, so a layout event raised by the teardown is not saved.
         /// </summary>
         private bool isPaneClosing = false;
+
+        /// <summary>
+        /// The dock position, width and floating height last written to the settings (set when the pane
+        /// is created, updated on every write), so a layout event that changed nothing is not written again.
+        /// </summary>
+        private Office.MsoCTPDockPosition recordedDockPosition;
+        private int recordedWidth;
+        private int recordedHeight;
 
         /// <summary>
         /// Wires up Excel events, unless the add-in is disabled or Sheet Navigator is installed.
@@ -116,6 +131,7 @@ namespace ContractsFileNavigator
                 bool enabled = ReadSetting(() => Properties.Settings.Default.Enabled);
                 Properties.Settings.Default.Enabled = enabled;
                 Properties.Settings.Default.Width = SavedWidth();
+                Properties.Settings.Default.Height = SavedHeight();
                 Properties.Settings.Default.DockPosition = DockPositionName(SavedDockPosition());
 
                 SaveSettings();
@@ -195,50 +211,63 @@ namespace ContractsFileNavigator
         /// </summary>
         private static int SavedWidth()
         {
-            return ClampPaneWidth(ReadSetting(() => Properties.Settings.Default.Width));
+            return ClampPaneWidth(ReadSetting(() => Properties.Settings.Default.Width), DefaultPaneWidth);
         }
 
-        private static int ClampPaneWidth(int width)
+        /// <summary>
+        /// Keeps a width within the saved range; a width of zero or less (a garbage value) is the fallback.
+        /// </summary>
+        private static int ClampPaneWidth(int width, int fallback)
         {
-            if (width <= 0) return DefaultPaneWidth;
+            if (width <= 0) return fallback;
             return Math.Min(MaxPaneWidth, width);
         }
 
         /// <summary>
-        /// The saved side, Left or Right; anything else falls back to the default.
+        /// The saved floating height, or the default height if the saved one is not a positive number.
+        /// </summary>
+        private static int SavedHeight()
+        {
+            return PositiveHeight(ReadSetting(() => Properties.Settings.Default.Height), DefaultPaneHeight);
+        }
+
+        /// <summary>
+        /// A height of zero or less (a garbage value) is the fallback. There is no ceiling: Excel keeps
+        /// a floating pane on screen.
+        /// </summary>
+        private static int PositiveHeight(int height, int fallback)
+        {
+            return height <= 0 ? fallback : height;
+        }
+
+        /// <summary>
+        /// The saved position, Left, Right or Floating; anything else falls back to the default.
         /// </summary>
         private static Office.MsoCTPDockPosition SavedDockPosition()
         {
             string saved = ReadSetting(() => Properties.Settings.Default.DockPosition);
-            return string.Equals(saved, "Left", StringComparison.OrdinalIgnoreCase)
-                ? Office.MsoCTPDockPosition.msoCTPDockPositionLeft
-                : DefaultDockPosition;
+            if (string.Equals(saved, "Left", StringComparison.OrdinalIgnoreCase))
+            {
+                return Office.MsoCTPDockPosition.msoCTPDockPositionLeft;
+            }
+            if (string.Equals(saved, "Floating", StringComparison.OrdinalIgnoreCase))
+            {
+                return Office.MsoCTPDockPosition.msoCTPDockPositionFloating;
+            }
+            return DefaultDockPosition;
         }
 
         /// <summary>
-        /// "Left" or "Right" for a side-docked position, null for floating or anything else.
+        /// The dock position as written in settings: "Left", "Right" or "Floating".
         /// </summary>
         private static string DockPositionName(Office.MsoCTPDockPosition position)
         {
             switch (position)
             {
-                case Office.MsoCTPDockPosition.msoCTPDockPositionLeft: return "Left";
                 case Office.MsoCTPDockPosition.msoCTPDockPositionRight: return "Right";
-                default: return null;
+                case Office.MsoCTPDockPosition.msoCTPDockPositionFloating: return "Floating";
+                default: return "Left";
             }
-        }
-
-        /// <summary>
-        /// Records the side the pane is docked on. Floating and other positions are not recorded.
-        /// </summary>
-        private static void SaveDockPosition(Office.MsoCTPDockPosition position)
-        {
-            string name = DockPositionName(position);
-            if (name == null) return;
-            if (string.Equals(ReadSetting(() => Properties.Settings.Default.DockPosition), name, StringComparison.Ordinal)) return;
-
-            Properties.Settings.Default.DockPosition = name;
-            SaveSettings();
         }
 
         /// <summary>
@@ -354,7 +383,7 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Creates the pane on the workbook's window at the saved width and side, fills the list, and shows it.
+        /// Creates the pane on the workbook's window at the saved position and size, fills the list, and shows it.
         /// </summary>
         private void CreatePane(Excel.Workbook workbook)
         {
@@ -367,13 +396,18 @@ namespace ContractsFileNavigator
                 Workbook = workbook
             };
 
+            Office.MsoCTPDockPosition savedDockPosition = SavedDockPosition();
+            int savedWidth = SavedWidth();
+            int savedHeight = SavedHeight();
             CustomTaskPane newPane = this.CustomTaskPanes.Add(newControl, "Worksheets", window);
             try
             {
-                newPane.DockPosition = SavedDockPosition();
-                newPane.Width = SavedWidth();
+                // Dock position before size: the pane API expects that order. Only a floating pane takes a height.
+                newPane.DockPosition = savedDockPosition;
+                newPane.Width = savedWidth;
+                if (savedDockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating) newPane.Height = savedHeight;
 
-                // Width is meaningless when docked top or bottom, so keep the pane on a side. Excel's
+                // Width is meaningless when docked top or bottom, so keep the pane on a side or floating. Excel's
                 // "NoHorizontal" is the restriction compatible with a side-docked pane, despite its name.
                 // Optional: a rejected restriction must never stop the pane from working.
                 try { newPane.DockPositionRestrict = Office.MsoCTPDockPositionRestrict.msoCTPDockPositionRestrictNoHorizontal; }
@@ -392,6 +426,11 @@ namespace ContractsFileNavigator
             pane = newPane;
             control = newControl;
             isPaneClosing = false;
+            recordedDockPosition = pane.DockPosition;
+            recordedWidth = ClampPaneWidth(pane.Width, savedWidth);
+            recordedHeight = recordedDockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating
+                ? PositiveHeight(pane.Height, savedHeight)
+                : savedHeight;
 
             control.RefreshWorksheets(workbook);
             pane.Visible = true;
@@ -458,7 +497,7 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Saves the pane's width once resizing has settled.
+        /// Records the resized pane once resizing has settled.
         /// </summary>
         private void ResizeSaveTimer_Tick(object sender, EventArgs e)
         {
@@ -467,35 +506,55 @@ namespace ContractsFileNavigator
                 resizeSaveTimer.Stop();
                 if (pane == null || isPaneClosing || !IsAlive() || !pane.Visible) return;
 
-                SaveWidth(pane.Width);
+                RecordPaneChange();
             }
             catch { /* Excel is busy */ }
         }
 
         /// <summary>
-        /// Saves the new side when the user docks the pane left or right.
+        /// Records the pane when the user docks it left or right or floats it. A pane that just floated
+        /// is given the saved height first, since only a floating pane has a height of its own. Floating
+        /// fires as the pane detaches; Excel may change the width at the same time.
         /// </summary>
         private void Pane_DockPositionChanged(object sender, EventArgs e)
         {
             try
             {
-                if (pane == null || isPaneClosing || !IsAlive()) return;
+                if (pane == null || isPaneClosing || !IsAlive() || !pane.Visible) return;
 
-                SaveDockPosition(pane.DockPosition);
+                if (pane.DockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating) pane.Height = recordedHeight;
+
+                RecordPaneChange();
             }
             catch { /* Excel is busy */ }
         }
 
         /// <summary>
-        /// Records the width, clamped, unless it is already on file.
+        /// After the user docks, floats or resizes the pane: writes its dock position, width and, while
+        /// floating, height to the settings. A layout event that changed nothing since the last write is
+        /// ignored, and so is a pane docked top or bottom. A width or height of zero or less is not a
+        /// change; the saved value stays. A docked pane's height is Excel's, so the saved height stays too.
         /// </summary>
-        private static void SaveWidth(int paneWidth)
+        private void RecordPaneChange()
         {
-            int width = ClampPaneWidth(paneWidth);
-            if (ReadSetting(() => Properties.Settings.Default.Width) == width) return;
+            Office.MsoCTPDockPosition dock = pane.DockPosition;
+            int width = ClampPaneWidth(pane.Width, recordedWidth);
+            int height = dock == Office.MsoCTPDockPosition.msoCTPDockPositionFloating
+                ? PositiveHeight(pane.Height, recordedHeight)
+                : recordedHeight;
+            if (dock == recordedDockPosition && width == recordedWidth && height == recordedHeight) return;
 
+            // Top and bottom are only reachable if Excel rejected the dock restriction; they have no saved form
+            if (dock == Office.MsoCTPDockPosition.msoCTPDockPositionTop || dock == Office.MsoCTPDockPosition.msoCTPDockPositionBottom) return;
+
+            Properties.Settings.Default.DockPosition = DockPositionName(dock);
             Properties.Settings.Default.Width = width;
+            Properties.Settings.Default.Height = height;
             SaveSettings();
+
+            recordedDockPosition = dock;
+            recordedWidth = width;
+            recordedHeight = height;
         }
 
         /// <summary>

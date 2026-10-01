@@ -1,6 +1,6 @@
 # Contracts File Navigator
 
-An Excel add-in that adds a **Worksheets** pane listing the sheets in `Contracts.xlsx`. The pane opens every time that file is opened. Click a name to jump to that sheet. Excel remembers how wide you made the pane.
+An Excel add-in that adds a **Worksheets** pane listing the sheets in `Contracts.xlsx`. The pane opens every time that file is opened. Click a name to jump to that sheet. Excel remembers where you put the pane and how big you made it.
 
 This is the single-file edition of [Sheet Navigator](https://github.com/jako479/SheetNavigator). Install one or the other, not both: Contracts File Navigator stays idle and shows a message while Sheet Navigator is installed.
 
@@ -19,7 +19,7 @@ This is the single-file edition of [Sheet Navigator](https://github.com/jako479/
 
 - The pane opens whenever `Contracts.xlsx` is opened. Close it with its **X**; it comes back the next time the file is opened.
 - Click a sheet in the pane to activate it.
-- The pane width and side (left or right) are remembered in your user profile; nothing is written to the workbook.
+- The pane's position (left, right or floating) and size are remembered in your user profile; nothing is written to the workbook. See DESIGN.md for the details.
 - To switch the add-in off without uninstalling it, set `Enabled` to `False` in its `user.config` and restart Excel. The file is under `%LOCALAPPDATA%\Microsoft_Corporation`, in the folder whose name starts with `ContractsFileNavigator.vsto`, and is created the first time the add-in runs.
 
 ## Troubleshooting
