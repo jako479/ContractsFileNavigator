@@ -295,7 +295,7 @@ namespace ContractsFileNavigator
                 RemovePane();
                 CreatePane(workbook);
             }
-            catch { /* Leave the pane hidden */ }
+            catch (Exception ex) { Diagnostics.Write("WorkbookOpen failed: " + ex); }
         }
 
         /// <summary>
@@ -312,7 +312,7 @@ namespace ContractsFileNavigator
 
                 RestorePane(workbook);
             }
-            catch { /* Leave the pane hidden */ }
+            catch (Exception ex) { Diagnostics.Write("WorkbookActivate failed: " + ex); }
         }
 
         /// <summary>
@@ -355,7 +355,7 @@ namespace ContractsFileNavigator
                     control.HighlightActiveSheet();
                 }
             }
-            catch { /* Chart sheets and templates can refuse the refresh */ }
+            catch (Exception ex) { Diagnostics.Write("SheetActivate failed: " + ex); }
         }
 
         /// <summary>
@@ -513,8 +513,9 @@ namespace ContractsFileNavigator
 
         /// <summary>
         /// Records the pane when the user docks it left or right or floats it. A pane that just floated
-        /// is given the saved height first, since only a floating pane has a height of its own. Floating
-        /// fires as the pane detaches; Excel may change the width at the same time.
+        /// is given the saved height first, since only a floating pane has a height of its own; Excel
+        /// rejects property sets inside this handler, so that is queued to run right after it returns.
+        /// Floating fires as the pane detaches; Excel may change the width at the same time.
         /// </summary>
         private void Pane_DockPositionChanged(object sender, EventArgs e)
         {
@@ -522,11 +523,32 @@ namespace ContractsFileNavigator
             {
                 if (pane == null || isPaneClosing || !IsAlive() || !pane.Visible) return;
 
-                if (pane.DockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating) pane.Height = recordedHeight;
+                if (pane.DockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating)
+                {
+                    control.BeginInvoke(new Action(ApplyFloatingHeight));
+                    return;
+                }
 
                 RecordPaneChange();
             }
-            catch { /* Excel is busy */ }
+            catch (Exception ex) { Diagnostics.Write("DockPositionChanged failed: " + ex); }
+        }
+
+        /// <summary>
+        /// Runs right after the float event's handler returns: gives the floating pane its saved
+        /// height, then records the pane.
+        /// </summary>
+        private void ApplyFloatingHeight()
+        {
+            try
+            {
+                if (pane == null || isPaneClosing || !IsAlive() || !pane.Visible) return;
+                if (pane.DockPosition != Office.MsoCTPDockPosition.msoCTPDockPositionFloating) return;
+
+                pane.Height = recordedHeight;
+                RecordPaneChange();
+            }
+            catch (Exception ex) { Diagnostics.Write("Floating height failed: " + ex); }
         }
 
         /// <summary>

@@ -4,6 +4,7 @@ Code complete and compiling, never run in Excel yet. Next: Clean Solution in She
 
 ## Decisions
 
+- Excel rejects any pane property set inside a pane event handler ("cannot be set during the object's event handler"), so the floating height is applied by code queued with BeginInvoke to run right after the dock event returns.
 - A floating pane is remembered as floating, at its width and height; its screen position is not saved because the pane API exposes none, so Excel places it. Pane behavior per event is in DESIGN.md.
 - No automated tests: the testable logic is private to ThisAddIn, which only exists inside Excel, and extracting it is not worth it for an add-in this size.
 - Only unexpected errors are logged, to %TEMP%\ContractsFileNavigator.log; catches for expected conditions stay silent.
