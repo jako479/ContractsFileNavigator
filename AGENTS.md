@@ -59,16 +59,14 @@ by this rule.
 
 ## Docs
 
+After a behavior change, read DESIGN.md, ARCHITECTURE.md and any other design
+document end to end and update whatever the change affects.
+
 Update project meta as appropriate: STATUS.md, CHANGELOG.md, TODO.md, README.md,
-release/README.txt, DESIGN.md and, where the project has one, ARCHITECTURE.md.
-CHANGELOG and TODO entries are single-line when possible.
+release/README.txt. CHANGELOG and TODO entries are single-line when possible.
 
-After any behavior change, re-read DESIGN.md (and ARCHITECTURE.md if present)
-end to end and update every statement the change affects, not just the section
-nearest the change.
-
-New entries in STATUS.md, CHANGELOG.md and TODO.md go at the top of their
-section, never mid-list or at the bottom.
+New entries in STATUS.md, WORKLOG.md, CHANGELOG.md and TODO.md go at the top of
+their section, never mid-list or at the bottom.
 
 ## Commits and hand-off
 
@@ -77,10 +75,10 @@ section, never mid-list or at the bottom.
   line per topic.
 - Never mention Claude, Anthropic or any AI tool — commits, comments, docs.
 - At the end, leave the worktree and return the session to the main checkout
-  first. Then give the git commands in two groups, one command per code
-  block: first the squash-merge, then its commit; second the worktree
-  removal, then the branch deletion. Each block is copied and run on its
-  own, so a failed merge is never followed by the cleanup.
+  first. Then give two code blocks, never chaining commands — each on its own
+  line: first the squash-merge and its commit, then the worktree removal and
+  the branch deletion. Each block is copied and run on its own, so a failed
+  merge is never followed by the cleanup.
 
 ## Writing
 
