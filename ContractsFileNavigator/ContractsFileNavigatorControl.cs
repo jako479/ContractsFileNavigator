@@ -7,8 +7,8 @@ using Excel = Microsoft.Office.Interop.Excel;
 namespace ContractsFileNavigator
 {
     /// <summary>
-    /// The pane's content: a list of the workbook's visible worksheets. Clicking a name activates
-    /// that sheet in this pane's own window, so several windows on one workbook stay independent.
+    /// The pane's content: a list of the workbook's visible worksheets. Enter, Space or a click on a name
+    /// activates that sheet in this pane's own window, so several windows on one workbook stay independent.
     /// </summary>
     public partial class ContractsFileNavigatorControl : UserControl
     {
@@ -16,11 +16,6 @@ namespace ContractsFileNavigator
         /// Excel's generic "can't do that now" error, raised for example while a sheet tab name is being typed.
         /// </summary>
         private const int ExcelBusyHResult = unchecked((int)0x800A03EC);
-
-        /// <summary>
-        /// True while this control moves the highlight itself, so only the user's selections trigger a jump.
-        /// </summary>
-        private bool isUpdatingSelection;
 
         /// <summary>
         /// The Excel window this pane belongs to. Each window has its own active sheet.
@@ -47,9 +42,13 @@ namespace ContractsFileNavigator
         {
             InitializeComponent();
 
-            // A single click selects and jumps; keys are swallowed so the highlight can only move by mouse
-            this.worksheetList.SelectedIndexChanged += new EventHandler(WorksheetList_SelectedIndexChanged);
+            // Keys move the highlight natively; only Enter, Space or a click activates
+            this.worksheetList.PreviewKeyDown += new PreviewKeyDownEventHandler(WorksheetList_PreviewKeyDown);
             this.worksheetList.KeyDown += new KeyEventHandler(WorksheetList_KeyDown);
+            this.worksheetList.MouseClick += new MouseEventHandler(WorksheetList_MouseClick);
+
+            // Once the keyboard leaves the list, the highlight follows the active sheet again
+            this.worksheetList.LostFocus += new EventHandler(WorksheetList_LostFocus);
 
             // Excel raises no event for a sheet rename or reorder, so check as the pointer arrives
             this.worksheetList.MouseEnter += new EventHandler(WorksheetList_MouseEnter);
@@ -64,50 +63,75 @@ namespace ContractsFileNavigator
             if (IsDisposed || activeWorkbook == null) return;
 
             List<string> names = VisibleSheetNames(activeWorkbook);
-            if (!SameAsList(names))
+            if (SameAsList(names))
             {
-                RunWithoutJumping(() =>
-                {
-                    this.worksheetList.BeginUpdate();
-                    try
-                    {
-                        this.worksheetList.Items.Clear();
-                        foreach (string name in names) this.worksheetList.Items.Add(name);
-                    }
-                    finally
-                    {
-                        this.worksheetList.EndUpdate();
-                    }
-                });
+                HighlightActiveSheet();
+                return;
             }
 
-            HighlightActiveSheet();
+            // A rebuild drops the highlight; a keyboard user gets it back on the same name if it survived
+            string highlighted = IsKeyboardNavigating ? this.worksheetList.SelectedItem as string : null;
+
+            this.worksheetList.BeginUpdate();
+            try
+            {
+                this.worksheetList.Items.Clear();
+                foreach (string name in names) this.worksheetList.Items.Add(name);
+            }
+            finally
+            {
+                this.worksheetList.EndUpdate();
+            }
+
+            if (highlighted != null && names.Contains(highlighted))
+            {
+                this.worksheetList.SelectedItem = highlighted;
+            }
+            else
+            {
+                HighlightActiveSheet(force: true);
+            }
         }
 
         /// <summary>
-        /// Moves the highlight to this window's active sheet without triggering a jump. A chart sheet
-        /// is not listed, so it clears the highlight; a stale one would block a click back to that sheet.
+        /// Moves the highlight to this window's active sheet, unless the keyboard is using the list:
+        /// the highlight is the user's cursor then. A chart sheet is not listed, so it clears the highlight.
         /// </summary>
         public void HighlightActiveSheet()
         {
-            if (IsDisposed) return;
+            HighlightActiveSheet(force: false);
+        }
 
-            RunWithoutJumping(() =>
+        /// <summary>
+        /// The move itself. A rebuilt list has no highlight, so a rebuild forces one even while
+        /// the keyboard is using the list.
+        /// </summary>
+        private void HighlightActiveSheet(bool force)
+        {
+            if (IsDisposed) return;
+            if (!force && IsKeyboardNavigating) return;
+
+            try
             {
-                try
+                object active = Window != null ? Window.ActiveSheet : TargetWorkbook?.ActiveSheet;
+                if (active is Excel.Worksheet currentSheet)
                 {
-                    object active = Window != null ? Window.ActiveSheet : TargetWorkbook?.ActiveSheet;
-                    if (active is Excel.Worksheet currentSheet)
-                    {
-                        this.worksheetList.SelectedItem = currentSheet.Name;
-                    }
-                    else
-                    {
-                        this.worksheetList.ClearSelected();
-                    }
+                    this.worksheetList.SelectedItem = currentSheet.Name;
                 }
-                catch (Exception ex) { Diagnostics.Write("Highlight failed: " + ex); }
-            });
+                else
+                {
+                    this.worksheetList.ClearSelected();
+                }
+            }
+            catch (Exception ex) { Diagnostics.Write("Highlight failed: " + ex); }
+        }
+
+        /// <summary>
+        /// True while the list has keyboard focus, when the highlight belongs to the user rather than to Excel.
+        /// </summary>
+        private bool IsKeyboardNavigating
+        {
+            get { return this.worksheetList.Focused; }
         }
 
         /// <summary>
@@ -135,23 +159,6 @@ namespace ContractsFileNavigator
                 if (!string.Equals(this.worksheetList.Items[i] as string, names[i], StringComparison.Ordinal)) return false;
             }
             return true;
-        }
-
-        /// <summary>
-        /// Runs a change to the list with the jump-on-select behavior suspended.
-        /// </summary>
-        private void RunWithoutJumping(Action action)
-        {
-            bool wasUpdating = isUpdatingSelection;
-            isUpdatingSelection = true;
-            try
-            {
-                action();
-            }
-            finally
-            {
-                isUpdatingSelection = wasUpdating;
-            }
         }
 
         /// <summary>
@@ -207,21 +214,56 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Blocks keyboard navigation in the list; Excel's Ctrl+PgUp/PgDn already covers that.
+        /// Puts the highlight back on the active sheet once the keyboard has left the list.
         /// </summary>
-        private void WorksheetList_KeyDown(object sender, KeyEventArgs e)
+        private void WorksheetList_LostFocus(object sender, EventArgs e)
         {
-            e.Handled = true;
-            e.SuppressKeyPress = true;
+            HighlightActiveSheet(force: true);
         }
 
         /// <summary>
-        /// Activates the selected sheet in this pane's window. If the jump cannot happen,
-        /// the list is refreshed and the highlight returns to the sheet the window is still on.
+        /// Enter is a dialog key the container would otherwise keep; the list wants it.
         /// </summary>
-        private void WorksheetList_SelectedIndexChanged(object sender, EventArgs e)
+        private void WorksheetList_PreviewKeyDown(object sender, PreviewKeyDownEventArgs e)
         {
-            if (isUpdatingSelection || IsDisposed) return;
+            if (e.KeyCode == Keys.Return) e.IsInputKey = true;
+        }
+
+        /// <summary>
+        /// Enter or Space activates the highlighted sheet. Every other key keeps the list's
+        /// native behavior: arrows, Home/End, PgUp/PgDn and typed letters move the highlight.
+        /// </summary>
+        private void WorksheetList_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Return && e.KeyCode != Keys.Space) return;
+
+            // Swallowed so Enter does not beep and Space does not start a type-ahead search
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            ActivateHighlightedSheet();
+        }
+
+        /// <summary>
+        /// A left click on a name activates it, even one that was already highlighted.
+        /// </summary>
+        private void WorksheetList_MouseClick(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+
+            int index = this.worksheetList.IndexFromPoint(e.Location);
+            if (index == ListBox.NoMatches) return;
+
+            this.worksheetList.SelectedIndex = index;
+            ActivateHighlightedSheet();
+        }
+
+        /// <summary>
+        /// Activates the highlighted sheet in this pane's window. If the jump cannot happen,
+        /// the list is refreshed so a renamed or removed sheet drops out.
+        /// </summary>
+        private void ActivateHighlightedSheet()
+        {
+            if (IsDisposed) return;
 
             Excel.Application app = Globals.ThisAddIn.Application;
             bool jumped = false;

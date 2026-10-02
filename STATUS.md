@@ -1,9 +1,10 @@
 # Status
 
-Compiles, and the size rules pass their tests. The add-in was started in Excel once, before the floating-height rework; the fixes from the 2026-09-30 code review are not yet tried in Excel. Next: Clean Solution in Sheet Navigator, then Ctrl+F5 here and run the first-run check in TODO.md.
+Compiles, and the size rules pass their tests. The add-in was started in Excel once, before the floating-height rework; the fixes from the 2026-09-30 code review and the keyboard-accessible list are not yet tried in Excel. Next: Clean Solution in Sheet Navigator, then Ctrl+F5 here and run the first-run and keyboard checks in TODO.md.
 
 ## Decisions
 
+- The list follows the Windows list pattern, as WCAG 2.1.1 requires keyboard operation: arrows and typed letters move the highlight, Enter, Space or a click activates, and while the list has keyboard focus refreshes leave the highlight alone. Screen readers get the name Worksheets.
 - A settings file is deleted and recreated only if it is the add-in's own user.config under the user's profile and .NET reports a parse error; any other settings failure is logged and the file left alone.
 - No automatic update check; a new version is installed by running the new release.
 - Excel rejects any pane property set inside a pane event handler ("cannot be set during the object's event handler"), so the floating height is applied by the resize-save timer, 500 ms after the last layout event, which also lets Excel's own resize at the end of the drag settle first.
@@ -15,6 +16,5 @@ Compiles, and the size rules pass their tests. The add-in was started in Excel o
 - State lives in the user's settings, never in the workbook, so opening the pane never dirties a file.
 - Settings are Enabled, Width, Height, DockPosition and UpgradeRequired only. Width is in points with no floor and a 400 ceiling, default 150; Height is in points with no floor and a 1200 ceiling, default 400, applied whenever the pane floats and saved only while it is floating, since a docked pane takes the window's height; DockPosition is Left, Right or Floating, default Right. All five are written on first run so the file can be edited.
 - Stays idle, with a message, while Sheet Navigator is registered in Excel; ClickOnce has no mainstream install-time block, so the check runs at startup.
-- A single click activates a sheet; keyboard navigation in the pane is blocked, since Ctrl+PgUp/PgDn already covers it.
 - The signing key stays out of the repo; contributors create their own test certificate.
 - The release ZIP is made by hand; zipping is not a VSTO publish convention.

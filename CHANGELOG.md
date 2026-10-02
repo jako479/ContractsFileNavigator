@@ -9,7 +9,7 @@ What changed for users, grouped by release version. Not a commit log.
 - Floating height is capped at 1200 points, like the 400-point width cap.
 - Every caught error is logged; a repeating one fills a single line.
 - Initial release.
-- Worksheets pane opens whenever Contracts.xlsx is opened and lists its visible sheets; click to jump.
+- Worksheets pane opens whenever Contracts.xlsx is opened and lists its visible sheets; click, or move to a name with the arrow keys or its first letter and press Enter or Space, to jump.
 - Closing the pane hides it until the file is opened again.
 - Pane position (left, right or floating) and size are remembered.
 - Can be switched off with the Enabled setting in user.config.

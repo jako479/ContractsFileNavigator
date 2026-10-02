@@ -4,7 +4,8 @@ CONTRACTS FILE NAVIGATOR - INSTALLATION
 
 Contracts File Navigator adds a Worksheets pane to Excel that
 lists the sheets in Contracts.xlsx. The pane opens every time
-that file is opened. Click a name to jump to it.
+that file is opened. Click a name to jump to it, or pick it
+with the arrow keys and press Enter.
 
 Install this OR Sheet Navigator, not both. Contracts File
 Navigator stays idle and shows a message while Sheet Navigator
