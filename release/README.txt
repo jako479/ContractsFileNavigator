@@ -27,8 +27,8 @@ STEP 3: USE IT
 --------------
 * Open Contracts.xlsx. The pane appears on the right.
 * Close the pane with its X; it comes back the next time the
-  file is opened. Excel remembers the pane's position (left,
-  right or floating) and size.
+  file is opened. Contracts File Navigator remembers the pane's
+  position (left, right or floating) and size.
 * To switch the add-in off without uninstalling it, set Enabled
   to False in its user.config (under %LOCALAPPDATA%\
   Microsoft_Corporation, in the folder whose name starts with
@@ -39,6 +39,11 @@ REQUIREMENTS
 * Windows with desktop Microsoft Excel 2013 or later.
 * .NET Framework 4.7.2 and the Visual Studio 2010 Tools for Office
   Runtime. The installer adds both if they are missing.
+
+TROUBLESHOOTING
+---------------
+Contracts File Navigator writes any unexpected error to
+%TEMP%\ContractsFileNavigator.log.
 
 REMOVAL
 -------

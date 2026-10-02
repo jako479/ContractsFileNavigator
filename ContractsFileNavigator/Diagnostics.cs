@@ -14,31 +14,30 @@ namespace ContractsFileNavigator
         private const long MaxLogBytes = 1024 * 1024;
         private const int KeepBytes = 256 * 1024;
 
-        private static readonly string LogPath = Path.Combine(Path.GetTempPath(), "ContractsFileNavigator.log");
-        private static readonly object Gate = new object();
+        private static readonly string logPath = Path.Combine(Path.GetTempPath(), "ContractsFileNavigator.log");
+        private static readonly object gate = new object();
 
         /// <summary>The last message written; an identical one straight after it is dropped.</summary>
         private static string lastMessage;
 
         /// <summary>
         /// Appends one timestamped line. A message identical to the previous one is dropped, so a
-        /// failure that repeats on every timer tick fills one line, not the file. This is the one place
-        /// a failure stays silent: there is nowhere left to report a logging failure.
+        /// failure that repeats on every timer tick fills one line, not the file.
         /// </summary>
         public static void Write(string message)
         {
             try
             {
-                lock (Gate)
+                lock (gate)
                 {
                     if (string.Equals(message, lastMessage, StringComparison.Ordinal)) return;
                     lastMessage = message;
 
                     TrimIfLarge();
-                    File.AppendAllText(LogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+                    File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
                 }
             }
-            catch { }
+            catch { /* The one place a failure stays silent: there is nowhere left to report a logging failure */ }
         }
 
         /// <summary>
@@ -62,13 +61,13 @@ namespace ContractsFileNavigator
         /// </summary>
         private static void TrimIfLarge()
         {
-            FileInfo info = new FileInfo(LogPath);
+            FileInfo info = new FileInfo(logPath);
             if (!info.Exists || info.Length <= MaxLogBytes) return;
 
-            byte[] all = File.ReadAllBytes(LogPath);
+            byte[] all = File.ReadAllBytes(logPath);
             byte[] tail = new byte[KeepBytes];
             Array.Copy(all, all.Length - KeepBytes, tail, 0, KeepBytes);
-            File.WriteAllBytes(LogPath, tail);
+            File.WriteAllBytes(logPath, tail);
         }
     }
 }

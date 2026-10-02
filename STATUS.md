@@ -1,9 +1,13 @@
 # Status
 
-Compiles, and the size rules pass their tests. The add-in was started in Excel once, before the floating-height rework; the fixes from the 2026-09-30 code review and the keyboard-accessible list are not yet tried in Excel. Next: Clean Solution in Sheet Navigator, then Ctrl+F5 here and run the first-run and keyboard checks in TODO.md.
+Compiles, and the size rules pass their tests. The add-in was started in Excel once, before the floating-height rework; the fixes from the 2026-09-30 code review, the keyboard-accessible list and the fixes ported from the Sheet Navigator reviews on 2026-10-02 are not yet tried in Excel. Next: Clean Solution in Sheet Navigator, then Ctrl+F5 here and run the checks in TODO.md.
 
 ## Decisions
 
+- A saved dock position, width or height Excel rejects falls back to its default rather than blocking the pane; if the default is rejected too, the pane keeps Excel's value.
+- A resize still waiting for its delay is written when the file closes or Excel quits; it happened before the close, so it is the user's.
+- List rebuilds are skipped while a macro has screen updating off; the pane catches up on the next tick.
+- A pane docked top or bottom has no saved form: a layout event ignores it and any other save of it throws, so Excel ignoring the dock restriction shows up as a failure instead of being saved as Left.
 - The list follows the Windows list pattern, as WCAG 2.1.1 requires keyboard operation: arrows and typed letters move the highlight, Enter, Space or a click activates, and while the list has keyboard focus refreshes leave the highlight alone. Screen readers get the name Worksheets.
 - A settings file is deleted and recreated only if it is the add-in's own user.config under the user's profile and .NET reports a parse error; any other settings failure is logged and the file left alone.
 - No automatic update check; a new version is installed by running the new release.

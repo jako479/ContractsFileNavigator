@@ -31,6 +31,8 @@ Everything lives in the user's settings, never in the workbook.
 - Opening the file creates the pane at the saved dock position and width,
   and at the saved height if that position is floating, replacing any pane
   left from an earlier open.
+- A saved dock position, width or height that Excel rejects falls back to
+  its default; if Excel rejects that too, the pane keeps Excel's own value.
 - A floating pane's screen position is Excel's; the add-in only knows it is
   floating. A `Floating` setting comes back floating at its saved width and
   height, wherever Excel puts it.
@@ -44,7 +46,8 @@ settings back to the pane.
 
 **Saved from the pane**: dock position and width on every dock, float or
 resize, and height too while the pane is floating. Docking never touches the
-saved height. Nothing is saved when the pane is hidden or the file closes.
+saved height. Hiding the pane saves nothing; closing the file saves only a
+resize still waiting for its delay.
 
 ## Pane events
 
@@ -70,7 +73,8 @@ floating.
 A dock, float or resize event that left the pane exactly as last written
 (for example the layout event Excel raises right after the pane is shown)
 writes nothing. A pane docked top or bottom, only possible if Excel rejected
-the add-in's dock restriction, is not written. A pane reporting a width or
+the add-in's dock restriction, is never written: a layout event ignores it,
+and any other attempt to save it is reported as a failure. A pane reporting a width or
 height of zero or less keeps the saved value. A docked pane's height is
 Excel's and is never written, so the saved height is always the last floating
 height.
@@ -87,8 +91,9 @@ height.
 - **Pane window closed** while the file stays open in another window: the
   dead pane is dropped on the next refresh tick, and the file's first window
   gets a fresh pane if the file is active.
-- **Workbook closing**: the pane is flagged as closing, so the layout events
-  of the teardown write nothing. The pane is replaced when the file is next
+- **Workbook closing**: a resize still waiting for its delay is written, then
+  the pane is flagged as closing, so the layout events of the teardown write
+  nothing. The pane is replaced when the file is next
   opened. If Excel's save prompt cancels the close, the flag is cleared by the
   next refresh tick once Excel answers again, or sooner by a workbook or sheet
   activation.
@@ -97,8 +102,10 @@ height.
   name away from the pane's workbook removes the pane. A plain save changes
   nothing.
 - **Sheet activated**: the pane re-highlights its window's active sheet; if
-  its window is the active one, it also refreshes its list.
-- **Excel closes**: timers stop, events unhook, nothing is written.
+  its window is the active one and no macro has screen updating off, it also
+  refreshes its list.
+- **Excel closes**: a resize still waiting for its delay is written; then
+  timers stop and events unhook.
 
 ## Worksheet list
 
@@ -108,9 +115,10 @@ sheet is active nothing is highlighted.
 
 **When it refreshes**
 
-- A sheet is activated.
+- A sheet is activated, unless a macro has screen updating off.
 - Once a second, while the pane is shown. If Excel is mid-edit (typing in a
-  cell or a tab name) only the highlight is updated.
+  cell or a tab name) or a macro has screen updating off, only the highlight
+  is updated.
 - The pointer enters the list.
 - The pane is created.
 - Activating a name could not jump (the sheet was renamed or removed).
@@ -125,7 +133,7 @@ moves to the window's active sheet, unless the keyboard is using the list.
 - Arrows, Home, End, PgUp, PgDn and typed letters move the highlight without
   switching sheets, as in any Windows list.
 - Enter, Space or a click on a name activates that sheet in the pane's own
-  window.
+  window. A click on the blank space under the names does nothing.
 - While the list has keyboard focus the highlight is the user's cursor:
   refreshes leave it where it is, and a rebuild puts it back on the same name
   if that sheet still exists. When focus leaves the list, the highlight

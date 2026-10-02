@@ -4,6 +4,11 @@ What changed for users, grouped by release version. Not a commit log.
 
 ## 1.0.0 - 2026-09-30
 
+- A resize made just before the file closes or Excel quits is kept.
+- Clicking the blank space under the sheet names no longer jumps to the last sheet.
+- A saved pane position or size that Excel rejects falls back to the default instead of blocking the pane.
+- The list pauses its rebuilds while a macro has screen updating off.
+- Message boxes stay in front of Excel.
 - The pane follows a Save As: a workbook renamed to Contracts.xlsx gets the pane, one renamed away loses it.
 - The pane comes back when its window closes while the file stays open in another window.
 - Floating height is capped at 1200 points, like the 400-point width cap.

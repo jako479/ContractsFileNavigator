@@ -162,7 +162,7 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Refreshes if Excel will answer, otherwise just re-highlights the active sheet.
+        /// Refreshes if Excel will answer and no macro has screen updating off, otherwise just re-highlights the active sheet.
         /// </summary>
         internal void RefreshQuietly()
         {
@@ -171,7 +171,9 @@ namespace ContractsFileNavigator
                 Excel.Workbook workbook = TargetWorkbook;
                 if (workbook == null) return;
 
-                if (IsExcelEditing(Globals.ThisAddIn.Application))
+                // Walking every sheet during a macro would slow it down; the list catches up once the macro is done
+                Excel.Application app = Globals.ThisAddIn.Application;
+                if (IsExcelEditing(app) || app.ScreenUpdating == false)
                 {
                     HighlightActiveSheet();
                 }
@@ -244,14 +246,17 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// A left click on a name activates it, even one that was already highlighted.
+        /// A left click on a name activates it, even one that was already highlighted; a click on the
+        /// blank space under the names does nothing.
         /// </summary>
         private void WorksheetList_MouseClick(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
 
+            // IndexFromPoint names the nearest item for any point inside the list, blank space below
+            // the names included, so the item's own rectangle decides whether a name was hit
             int index = this.worksheetList.IndexFromPoint(e.Location);
-            if (index == ListBox.NoMatches) return;
+            if (index == ListBox.NoMatches || !this.worksheetList.GetItemRectangle(index).Contains(e.Location)) return;
 
             this.worksheetList.SelectedIndex = index;
             ActivateHighlightedSheet();
@@ -315,7 +320,7 @@ namespace ContractsFileNavigator
             // Only after ScreenUpdating is back on, so Excel repaints while the box is up
             if (failure != null)
             {
-                MessageBox.Show($"Could not jump to sheet: {failure}", "Navigation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, $"Could not jump to sheet: {failure}", "Navigation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
     }
