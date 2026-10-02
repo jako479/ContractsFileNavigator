@@ -18,7 +18,7 @@ This is the single-file edition of [Sheet Navigator](https://github.com/jako479/
 ## Use
 
 - The pane opens whenever `Contracts.xlsx` is opened. Close it with its **X**; it comes back the next time the file is opened.
-- Click a sheet in the pane to activate it, or move to it with the arrow keys or its first letter and press Enter or Space.
+- Click a sheet in the pane to activate it, or move to it with the arrow keys or its first letter and press Enter.
 - The pane's position (left, right or floating) and size are remembered in your user profile; nothing is written to the workbook. See DESIGN.md for the details.
 - To switch the add-in off without uninstalling it, set `Enabled` to `False` in its `user.config` and restart Excel. The file is under `%LOCALAPPDATA%\Microsoft_Corporation`, in the folder whose name starts with `ContractsFileNavigator.vs` (.NET cuts the name short), and is created the first time the add-in runs.
 

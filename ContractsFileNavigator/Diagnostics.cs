@@ -17,12 +17,14 @@ namespace ContractsFileNavigator
         private static readonly string logPath = Path.Combine(Path.GetTempPath(), "ContractsFileNavigator.log");
         private static readonly object gate = new object();
 
-        /// <summary>The last message written; an identical one straight after it is dropped.</summary>
+        /// <summary>The last message written, and how many identical messages have been dropped since.</summary>
         private static string lastMessage;
+        private static int repeatCount;
 
         /// <summary>
-        /// Appends one timestamped line. A message identical to the previous one is dropped, so a
-        /// failure that repeats on every timer tick fills one line, not the file.
+        /// Appends one timestamped line. A message identical to the previous one is counted instead of
+        /// written, and the count goes out once a different message arrives, so a failure that repeats
+        /// on every timer tick fills two lines, not the file.
         /// </summary>
         public static void Write(string message)
         {
@@ -30,14 +32,33 @@ namespace ContractsFileNavigator
             {
                 lock (gate)
                 {
-                    if (string.Equals(message, lastMessage, StringComparison.Ordinal)) return;
-                    lastMessage = message;
+                    if (string.Equals(message, lastMessage, StringComparison.Ordinal))
+                    {
+                        repeatCount++;
+                        return;
+                    }
 
-                    TrimIfLarge();
-                    File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+                    WriteRepeatCount();
+                    lastMessage = message;
+                    AppendLine(message);
                 }
             }
-            catch { /* The one place a failure stays silent: there is nowhere left to report a logging failure */ }
+            catch { /* Nowhere left to report a logging failure */ }
+        }
+
+        /// <summary>
+        /// Writes the count of any repeats still pending, for a shutdown that would otherwise lose it.
+        /// </summary>
+        public static void Flush()
+        {
+            try
+            {
+                lock (gate)
+                {
+                    WriteRepeatCount();
+                }
+            }
+            catch { /* Nowhere left to report a logging failure */ }
         }
 
         /// <summary>
@@ -53,7 +74,28 @@ namespace ContractsFileNavigator
                 Application.ThreadException += (sender, e) =>
                     Write("UNHANDLED (WinForms): " + e.Exception);
             }
-            catch { }
+            catch (Exception ex) { Write("Unhandled exception hookup failed: " + ex); }
+        }
+
+        /// <summary>
+        /// Writes how many times the last message repeated, if it did, and resets the count. The caller holds the lock.
+        /// </summary>
+        private static void WriteRepeatCount()
+        {
+            if (repeatCount == 0) return;
+
+            int count = repeatCount;
+            repeatCount = 0;
+            AppendLine($"Last message repeated {count} {(count == 1 ? "time" : "times")}");
+        }
+
+        /// <summary>
+        /// Appends one timestamped line, trimming the file first if it has grown large. The caller holds the lock.
+        /// </summary>
+        private static void AppendLine(string line)
+        {
+            TrimIfLarge();
+            File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {line}{Environment.NewLine}");
         }
 
         /// <summary>

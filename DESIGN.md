@@ -132,11 +132,23 @@ moves to the window's active sheet, unless the keyboard is using the list.
 
 - Arrows, Home, End, PgUp, PgDn and typed letters move the highlight without
   switching sheets, as in any Windows list.
-- Enter, Space or a click on a name activates that sheet in the pane's own
-  window. A click on the blank space under the names does nothing.
+- Enter or a click on a name activates that sheet in the pane's own window.
+  A click on the blank space below the names activates nothing.
+- After Enter or a click, focus goes back to the pane's window, whether or
+  not the jump happened, so Excel's keys work right away.
 - While the list has keyboard focus the highlight is the user's cursor:
   refreshes leave it where it is, and a rebuild puts it back on the same name
   if that sheet still exists. When focus leaves the list, the highlight
   returns to the active sheet.
 - The pane handles no other keys.
 - Screen readers announce the list as "Worksheets".
+
+## Diagnostics
+
+Every caught error and any unhandled exception go to
+`%TEMP%\ContractsFileNavigator.log`, newest 256 KB kept once it passes
+1 MB. A message identical to the previous one is counted instead of
+written, and "Last message repeated N times" follows once a different
+message arrives or Excel closes. Two failures are not logged: a failure of
+the log itself, and Excel's expected refusal when Enter or a click lands
+while a cell or tab name is being edited. Nothing else is logged.

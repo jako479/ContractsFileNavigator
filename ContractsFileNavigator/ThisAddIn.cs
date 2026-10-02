@@ -870,6 +870,9 @@ namespace ContractsFileNavigator
             RunLogged("WorkbookAfterSave unhook", () => this.Application.WorkbookAfterSave -= Application_WorkbookAfterSave);
             RunLogged("WorkbookBeforeClose unhook", () => this.Application.WorkbookBeforeClose -= Application_WorkbookBeforeClose);
             RunLogged("SheetActivate unhook", () => this.Application.SheetActivate -= Application_SheetActivate);
+
+            // A repeat count still pending would otherwise be lost with Excel
+            Diagnostics.Flush();
         }
 
         /// <summary>
