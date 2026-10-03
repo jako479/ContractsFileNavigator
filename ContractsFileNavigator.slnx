@@ -13,5 +13,4 @@
     <File Path="release/README.txt" />
   </Folder>
   <Project Path="ContractsFileNavigator/ContractsFileNavigator.csproj" Id="3675d1bb-c2cc-4d6f-b7a0-a26842ad583c" />
-  <Project Path="ContractsFileNavigator.Tests/ContractsFileNavigator.Tests.csproj" />
 </Solution>

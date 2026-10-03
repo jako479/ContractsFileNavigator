@@ -245,9 +245,6 @@
     <Compile Include="Diagnostics.cs">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="PaneSizeRules.cs">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="ThisAddIn.cs">
       <SubType>Code</SubType>
     </Compile>

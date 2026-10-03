@@ -34,6 +34,18 @@ namespace ContractsFileNavigator
         /// </summary>
         private const int FallbackHeight = 400;
 
+        /// <summary>
+        /// Ceiling for saved widths, on both save and load, to reject a garbage value in the settings file.
+        /// There is no floor: Excel enforces its own minimum whenever a width is set.
+        /// </summary>
+        private const int MaxPaneWidth = 400;
+
+        /// <summary>
+        /// Ceiling for saved floating heights, on both save and load. Excel puts no maximum on a floating
+        /// pane, so a garbage value could push its bottom edge off the screen.
+        /// </summary>
+        private const int MaxPaneHeight = 1200;
+
         /// <summary>The settings file .NET keeps per user: the only file settings recovery may delete.</summary>
         private const string UserConfigFileName = "user.config";
 
@@ -318,7 +330,7 @@ namespace ContractsFileNavigator
         /// </summary>
         private static int SavedWidth()
         {
-            return PaneSizeRules.ClampWidth(ReadSetting(() => Properties.Settings.Default.Width), FallbackWidth);
+            return ClampPaneWidth(ReadSetting(() => Properties.Settings.Default.Width), FallbackWidth);
         }
 
         /// <summary>
@@ -326,7 +338,7 @@ namespace ContractsFileNavigator
         /// </summary>
         private static int SavedHeight()
         {
-            return PaneSizeRules.ClampHeight(ReadSetting(() => Properties.Settings.Default.Height), FallbackHeight);
+            return ClampPaneHeight(ReadSetting(() => Properties.Settings.Default.Height), FallbackHeight);
         }
 
         /// <summary>
@@ -344,6 +356,42 @@ namespace ContractsFileNavigator
                 return Office.MsoCTPDockPosition.msoCTPDockPositionFloating;
             }
             return FallbackDockPosition;
+        }
+
+        /// <summary>
+        /// Keeps a width within the saved range; a width of zero or less (a garbage value) is the fallback.
+        /// </summary>
+        private static int ClampPaneWidth(int width, int fallback)
+        {
+            if (width <= 0) return fallback;
+            return Math.Min(MaxPaneWidth, width);
+        }
+
+        /// <summary>
+        /// The pane's width, within the saved range.
+        /// </summary>
+        private static int PaneWidth(CustomTaskPane pane, int fallback)
+        {
+            return ClampPaneWidth(pane.Width, fallback);
+        }
+
+        /// <summary>
+        /// Keeps a height within the saved range; a height of zero or less (a garbage value) is the fallback.
+        /// </summary>
+        private static int ClampPaneHeight(int height, int fallback)
+        {
+            if (height <= 0) return fallback;
+            return Math.Min(MaxPaneHeight, height);
+        }
+
+        /// <summary>
+        /// The pane's height while floating, within the saved range; a docked pane's height is Excel's, so the fallback stands.
+        /// </summary>
+        private static int PaneHeight(CustomTaskPane pane, int fallback)
+        {
+            return pane.DockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating
+                ? ClampPaneHeight(pane.Height, fallback)
+                : fallback;
         }
 
         /// <summary>
@@ -574,10 +622,8 @@ namespace ContractsFileNavigator
 
                 // What Excel actually gave the pane is the baseline for change detection
                 dock = newPane.DockPosition;
-                width = PaneSizeRules.ClampWidth(newPane.Width, savedWidth);
-                height = dock == Office.MsoCTPDockPosition.msoCTPDockPositionFloating
-                    ? PaneSizeRules.ClampHeight(newPane.Height, savedHeight)
-                    : savedHeight;
+                width = PaneWidth(newPane, savedWidth);
+                height = PaneHeight(newPane, savedHeight);
 
                 // The quiet fill tolerates a busy Excel; the refresh timer fills the list a moment later
                 newControl.RefreshQuietly();
@@ -825,13 +871,10 @@ namespace ContractsFileNavigator
         /// </summary>
         private void RecordPaneChange()
         {
-            // A width or height of zero or less is not a change, the saved value stays; a docked pane's
-            // height is Excel's, so the saved height stays too
+            // A docked pane's height is Excel's, so the recorded floating height stands while docked
             Office.MsoCTPDockPosition dock = pane.DockPosition;
-            int width = PaneSizeRules.ClampWidth(pane.Width, recordedWidth);
-            int height = dock == Office.MsoCTPDockPosition.msoCTPDockPositionFloating
-                ? PaneSizeRules.ClampHeight(pane.Height, recordedHeight)
-                : recordedHeight;
+            int width = PaneWidth(pane, recordedWidth);
+            int height = PaneHeight(pane, recordedHeight);
             if (dock == recordedDockPosition && width == recordedWidth && height == recordedHeight) return;
 
             // Top and bottom are only reachable if Excel rejected the dock restriction; they have no saved form
