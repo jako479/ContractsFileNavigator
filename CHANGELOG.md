@@ -4,6 +4,8 @@ What changed for users, grouped by release version. Not a commit log.
 
 ## 1.0.0 - 2026-09-30
 
+- Docking the pane is saved once the drag settles, like floating and resizing, so the width Excel gives it is saved too.
+- A pane change made while Excel asks about unsaved changes is kept if the close is cancelled.
 - Enter or a click on a sheet name hands focus back to the worksheet, so Excel's keys work right away.
 - A resize made just before the file closes or Excel quits is kept.
 - Clicking the blank space under the sheet names no longer jumps to the last sheet.

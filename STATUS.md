@@ -1,9 +1,10 @@
 # Status
 
-Compiles, and the size rules pass their tests. The add-in was started in Excel once, before the floating-height rework; the fixes from the 2026-09-30 code review, the keyboard-accessible list (matched to Sheet Navigator's on 2026-10-02) and the fixes ported from the Sheet Navigator reviews on 2026-10-02 are not yet tried in Excel. Next: Clean Solution in Sheet Navigator, then Ctrl+F5 here.
+Compiles, and the size rules pass their tests. The add-in was started in Excel once, before the floating-height rework; the fixes from the 2026-09-30 code review, the keyboard-accessible list (matched to Sheet Navigator's on 2026-10-02), the fixes ported from the Sheet Navigator reviews on 2026-10-02 and the dock, closing and shutdown handling matched to Sheet Navigator's the same day are not yet tried in Excel. Next: Clean Solution in Sheet Navigator, then Ctrl+F5 here.
 
 ## Decisions
 
+- Dock, float and resize all go through the 500 ms resize save, since Excel may change the width while docking; a change queued while the file is closing is re-checked up to four times before it is written or dropped. Both match Sheet Navigator.
 - A saved dock position, width or height Excel rejects falls back to its default rather than blocking the pane; if the default is rejected too, the pane keeps Excel's value.
 - A resize still waiting for its delay is written when the file closes or Excel quits; it happened before the close, so it is the user's.
 - List rebuilds are skipped while a macro has screen updating off; the pane catches up on the next tick.

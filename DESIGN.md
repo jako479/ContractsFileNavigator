@@ -57,11 +57,11 @@ Nothing is written. The pane stays hidden until the file is opened again.
 
 **Pane docked or floated**
 
-A pane docked left or right is written at once: its dock position and width.
-Width is written too because Excel may change it when docking or floating.
-A pane that just floated is not written yet; Excel rejects property sets
-inside the dock event and may still resize the pane as the drag ends, so it
-is handled by the resize rule below once the drag settles.
+Not written yet. Excel rejects property sets inside the dock event and may
+still resize the pane as the drag ends, and it may change the width when
+docking or floating, so the change is handled by the resize rule below once
+the drag settles. A pane that just floated is marked to get the saved height
+first.
 
 **Pane resized** (written once the drag settles, floating or docked)
 
@@ -91,12 +91,13 @@ height.
 - **Pane window closed** while the file stays open in another window: the
   dead pane is dropped on the next refresh tick, and the file's first window
   gets a fresh pane if the file is active.
-- **Workbook closing**: a resize still waiting for its delay is written, then
-  the pane is flagged as closing, so the layout events of the teardown write
-  nothing. The pane is replaced when the file is next
-  opened. If Excel's save prompt cancels the close, the flag is cleared by the
-  next refresh tick once Excel answers again, or sooner by a workbook or sheet
-  activation.
+- **Workbook closing**: a change still waiting for its delay is written, then
+  the pane is flagged as closing. A layout change queued after that waits,
+  re-checked every half second up to four times: a pane gone by then was torn
+  down and the change is dropped; one still shown survived a cancelled close
+  and the change is written. The flag is also cleared by the next refresh tick
+  once Excel answers again, or sooner by a workbook or sheet activation. The
+  pane is replaced when the file is next opened.
 - **Workbook saved**: a Save As that gives a workbook the Contracts name gets
   it a pane (a pane the user closed stays closed); a Save As that takes the
   name away from the pane's workbook removes the pane. A plain save changes
@@ -104,8 +105,8 @@ height.
 - **Sheet activated**: the pane re-highlights its window's active sheet; if
   its window is the active one and no macro has screen updating off, it also
   refreshes its list.
-- **Excel closes**: a resize still waiting for its delay is written; then
-  timers stop and events unhook.
+- **Excel closes**: a change still waiting for its delay is written; then
+  timers stop, events unhook and the pane is dropped.
 
 ## Worksheet list
 

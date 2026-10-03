@@ -22,20 +22,17 @@ namespace ContractsFileNavigator
         /// <summary>Only a saved workbook with this file name gets the pane.</summary>
         private const string ContractsFileName = "Contracts.xlsx";
 
-        /// <summary>
-        /// Fallback pane width in points when the saved width is not a positive number. The normal
-        /// default is the Width setting's own default value; points already scale with DPI.
-        /// </summary>
-        private const int DefaultPaneWidth = 150;
+        /// <summary>Docked side used when the saved dock position cannot be read.</summary>
+        private const Office.MsoCTPDockPosition FallbackDockPosition = Office.MsoCTPDockPosition.msoCTPDockPositionRight;
+
+        /// <summary>Pane width in points used when the saved width cannot be read. Points already scale with DPI.</summary>
+        private const int FallbackWidth = 150;
 
         /// <summary>
-        /// Fallback floating height in points when the saved height is not a positive number. Only a
+        /// Floating pane height in points used when the saved height cannot be read. Only a
         /// floating pane has a height of its own; a docked pane is stretched to the window.
         /// </summary>
-        private const int DefaultPaneHeight = 400;
-
-        /// <summary>Fallback position when the saved DockPosition is not Left, Right or Floating.</summary>
-        private const Office.MsoCTPDockPosition DefaultDockPosition = Office.MsoCTPDockPosition.msoCTPDockPositionRight;
+        private const int FallbackHeight = 400;
 
         /// <summary>The settings file .NET keeps per user: the only file settings recovery may delete.</summary>
         private const string UserConfigFileName = "user.config";
@@ -46,14 +43,17 @@ namespace ContractsFileNavigator
         /// </summary>
         private const string SheetNavigatorProgId = "SheetNavigator";
 
+        /// <summary>
+        /// How many half-second checks a pane change waits while the file's close is pending. A pane
+        /// still shown after that many survived a cancelled close, so the change is the user's.
+        /// </summary>
+        private const int ClosingRecheckLimit = 4;
+
         /// <summary>The pane and its list, created on the Contracts window while the file is open.</summary>
         private CustomTaskPane pane;
         private ContractsFileNavigatorControl control;
 
-        /// <summary>
-        /// Delays the save until the user has stopped dragging the pane border. It also runs after the
-        /// pane floats, once the drag that floated it has settled.
-        /// </summary>
+        /// <summary>Delays recording a resize, dock or float until the user has stopped dragging.</summary>
         private readonly Timer resizeSaveTimer = new Timer { Interval = 500 };
 
         /// <summary>
@@ -63,9 +63,15 @@ namespace ContractsFileNavigator
         private readonly Timer refreshTimer = new Timer { Interval = 1000 };
 
         /// <summary>
-        /// Set while the Contracts file is closing, so a layout event raised by the teardown is not saved.
+        /// Set while the Contracts file is closing, so a layout change raised by the teardown is not
+        /// taken for the user's.
         /// </summary>
         private bool isPaneClosing = false;
+
+        /// <summary>
+        /// How many times a queued change has waited on <see cref="isPaneClosing"/>; see <see cref="ClosingRecheckLimit"/>.
+        /// </summary>
+        private int closingRechecks;
 
         /// <summary>
         /// Set when the pane floats. The saved height is applied by the next resize save, because Excel
@@ -149,7 +155,11 @@ namespace ContractsFileNavigator
 
                 SaveSettings();
             }
-            catch (Exception ex) { Diagnostics.Write("Settings carry-over failed: " + ex); }
+            catch (Exception ex)
+            {
+                // The flag stays set, so the next start tries again; without the log that retry would be invisible
+                Diagnostics.Write("Settings upgrade failed: " + ex);
+            }
         }
 
         /// <summary>
@@ -163,7 +173,7 @@ namespace ContractsFileNavigator
             }
             catch (ConfigurationErrorsException ex)
             {
-                if (!RecoverSettings(ex)) throw;
+                if (!TryRecoverSettings(ex)) throw;
                 Properties.Settings.Default.Reload();
                 return read();
             }
@@ -180,7 +190,7 @@ namespace ContractsFileNavigator
             }
             catch (ConfigurationErrorsException ex)
             {
-                if (!RecoverSettings(ex)) throw;
+                if (!TryRecoverSettings(ex)) throw;
                 Properties.Settings.Default.Reload();
                 write();
             }
@@ -198,23 +208,23 @@ namespace ContractsFileNavigator
             }
             catch (ConfigurationErrorsException ex)
             {
-                if (!RecoverSettings(ex)) throw;
+                if (!TryRecoverSettings(ex)) throw;
                 Properties.Settings.Default.Save();
             }
         }
 
         /// <summary>
         /// Deletes a corrupt user.config (a crash can leave it truncated, and then every settings call
-        /// throws until it is gone). True if the file was deleted.
+        /// throws until it is gone). True if the file was deleted; the caller reloads if it needs the defaults.
         /// </summary>
-        private static bool RecoverSettings(ConfigurationErrorsException ex)
+        private static bool TryRecoverSettings(ConfigurationErrorsException ex)
         {
             // Only the add-in's own user.config inside the user's profile, and only on a parse error;
             // anything else (another file, a passing "file in use") is logged and left alone
             string file = ConfigFileNamedBy(ex);
             if (!IsOwnUserConfig(file) || !IsParseError(ex))
             {
-                Diagnostics.Write("Settings unreadable, left as is: " + ex);
+                Diagnostics.Write("Settings unavailable, file kept: " + (file ?? "(unknown path)") + " | " + ex);
                 return false;
             }
 
@@ -304,23 +314,23 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// The saved pane width, clamped, or the default width if none has been saved yet.
+        /// The saved pane width, clamped; a width of zero or less (a garbage value) is the fallback.
         /// </summary>
         private static int SavedWidth()
         {
-            return PaneSizeRules.ClampWidth(ReadSetting(() => Properties.Settings.Default.Width), DefaultPaneWidth);
+            return PaneSizeRules.ClampWidth(ReadSetting(() => Properties.Settings.Default.Width), FallbackWidth);
         }
 
         /// <summary>
-        /// The saved floating height, clamped, or the default height if none has been saved yet.
+        /// The saved floating height, clamped; a height of zero or less (a garbage value) is the fallback.
         /// </summary>
         private static int SavedHeight()
         {
-            return PaneSizeRules.ClampHeight(ReadSetting(() => Properties.Settings.Default.Height), DefaultPaneHeight);
+            return PaneSizeRules.ClampHeight(ReadSetting(() => Properties.Settings.Default.Height), FallbackHeight);
         }
 
         /// <summary>
-        /// The saved position, Left, Right or Floating; anything else falls back to the default.
+        /// The saved dock position; anything but "Left", "Right" or "Floating" (a garbage value) is the fallback.
         /// </summary>
         private static Office.MsoCTPDockPosition SavedDockPosition()
         {
@@ -333,7 +343,7 @@ namespace ContractsFileNavigator
             {
                 return Office.MsoCTPDockPosition.msoCTPDockPositionFloating;
             }
-            return DefaultDockPosition;
+            return FallbackDockPosition;
         }
 
         /// <summary>
@@ -419,8 +429,8 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Records a resize the user made just before the close, then flags the pane as closing so the
-        /// layout events of the teardown write nothing.
+        /// Records anything the user changed just before the close, then flags the pane as closing so a
+        /// layout change raised by the teardown is not taken for the user's.
         /// </summary>
         private void Application_WorkbookBeforeClose(Excel.Workbook workbook, ref bool cancel)
         {
@@ -428,12 +438,14 @@ namespace ContractsFileNavigator
             {
                 if (pane == null || !IsContractsFile(workbook)) return;
 
-                // A resize still waiting for its delay happened before the close began, so it is the user's
-                FlushPendingSave();
+                // A change still waiting for its delay happened before the close began, so it is the user's
+                FlushPendingSaves();
 
-                // Excel asks about unsaved changes after this event, so the close may still be cancelled;
-                // the pane itself is replaced when the file is next opened
+                // Excel asks about unsaved changes after this event, so the close may still be cancelled; the
+                // flag is cleared when the user works in the file again or when a change outlives the re-checks.
+                // The pane itself is replaced when the file is next opened
                 isPaneClosing = true;
+                closingRechecks = 0;
             }
             catch (Exception ex) { Diagnostics.Write("WorkbookBeforeClose failed: " + ex); }
         }
@@ -509,9 +521,13 @@ namespace ContractsFileNavigator
         /// </summary>
         private void RestorePane(Excel.Workbook workbook)
         {
-            if (pane != null && !IsAlive()) RemovePane();
-            if (pane != null || !IsContractsFile(workbook)) return;
-            CreatePane(workbook);
+            try
+            {
+                if (pane != null && !IsAlive()) RemovePane();
+                if (pane != null || !IsContractsFile(workbook)) return;
+                CreatePane(workbook);
+            }
+            catch (Exception ex) { Diagnostics.Write("RestorePane failed: " + ex); }
         }
 
         /// <summary>
@@ -540,11 +556,11 @@ namespace ContractsFileNavigator
             {
                 // Dock position before size: the pane API expects that order. Only a floating pane takes a height.
                 // A value Excel rejects must not stop the pane from being created, or the file could never get one.
-                ApplySavedOrDefault("dock position", () => newPane.DockPosition = savedDockPosition, () => newPane.DockPosition = DefaultDockPosition);
-                ApplySavedOrDefault("width", () => newPane.Width = savedWidth, () => newPane.Width = DefaultPaneWidth);
+                ApplySavedOrDefault("dock position", () => newPane.DockPosition = savedDockPosition, () => newPane.DockPosition = FallbackDockPosition);
+                ApplySavedOrDefault("width", () => newPane.Width = savedWidth, () => newPane.Width = FallbackWidth);
                 if (newPane.DockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating)
                 {
-                    ApplySavedOrDefault("height", () => newPane.Height = savedHeight, () => newPane.Height = DefaultPaneHeight);
+                    ApplySavedOrDefault("height", () => newPane.Height = savedHeight, () => newPane.Height = FallbackHeight);
                 }
 
                 // Width is meaningless when docked top or bottom, so keep the pane on a side or floating. Excel's
@@ -553,8 +569,8 @@ namespace ContractsFileNavigator
                 try { newPane.DockPositionRestrict = Office.MsoCTPDockPositionRestrict.msoCTPDockPositionRestrictNoHorizontal; }
                 catch (Exception ex) { Diagnostics.Write("Dock restriction rejected: " + ex); }
 
-                newControl.Resize += new EventHandler(NavigatorControl_Resize);
                 newPane.DockPositionChanged += new EventHandler(Pane_DockPositionChanged);
+                newControl.Resize += new EventHandler(Control_Resize);
 
                 // What Excel actually gave the pane is the baseline for change detection
                 dock = newPane.DockPosition;
@@ -570,8 +586,6 @@ namespace ContractsFileNavigator
             catch
             {
                 // Don't leave a half-configured pane behind
-                try { newControl.Resize -= NavigatorControl_Resize; } catch (Exception ex) { Diagnostics.Write("Resize unhook after failed creation failed: " + ex); }
-                try { newPane.DockPositionChanged -= Pane_DockPositionChanged; } catch (Exception ex) { Diagnostics.Write("Dock unhook after failed creation failed: " + ex); }
                 try { this.CustomTaskPanes.Remove(newPane); } catch (Exception ex) { Diagnostics.Write("Pane removal after failed creation failed: " + ex); }
                 throw;
             }
@@ -622,8 +636,8 @@ namespace ContractsFileNavigator
             isFloatingHeightPending = false;
             resizeSaveTimer.Stop();
 
-            try { oldControl.Resize -= NavigatorControl_Resize; } catch (Exception ex) { Diagnostics.Write("Resize unhook failed: " + ex); }
             try { oldPane.DockPositionChanged -= Pane_DockPositionChanged; } catch (Exception ex) { Diagnostics.Write("Dock unhook failed: " + ex); }
+            try { oldControl.Resize -= Control_Resize; } catch (Exception ex) { Diagnostics.Write("Resize unhook failed: " + ex); }
             try { this.CustomTaskPanes.Remove(oldPane); } catch (Exception ex) { Diagnostics.Write("Pane removal failed (already disposed with its window?): " + ex); }
         }
 
@@ -695,38 +709,51 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// True while the pane exists, is not being torn down, and is shown: the only time a layout
-        /// event is worth recording.
+        /// True while the pane exists and is shown: the only time a layout event concerns it.
         /// </summary>
-        private bool CanRecordPane()
+        private bool IsShown()
         {
-            return pane != null && !isPaneClosing && IsAlive() && pane.Visible;
+            return pane != null && IsAlive() && pane.Visible;
         }
 
         /// <summary>
-        /// Restarts the save delay on every resize, so a drag is written once when it ends.
+        /// Queues the resize so a drag is written once, when it ends.
         /// </summary>
-        private void NavigatorControl_Resize(object sender, EventArgs e)
+        private void Control_Resize(object sender, EventArgs e)
         {
             try
             {
-                if (!CanRecordPane()) return;
+                if (!IsShown()) return;
 
-                resizeSaveTimer.Stop();
-                resizeSaveTimer.Start();
+                QueueResizeSave();
             }
             catch (Exception ex) { Diagnostics.Write("Resize failed: " + ex); }
         }
 
         /// <summary>
-        /// Records the pane once resizing has settled, after first giving a pane that just floated its saved height.
+        /// Queues a resize, dock or float to be recorded once the delay has passed, restarting the delay.
+        /// </summary>
+        private void QueueResizeSave()
+        {
+            resizeSaveTimer.Stop();
+            resizeSaveTimer.Start();
+        }
+
+        /// <summary>
+        /// Records the layout change that has settled, after first giving a pane that just floated its
+        /// saved height; a change still waiting on a pending close is queued again.
         /// </summary>
         private void ResizeSaveTimer_Tick(object sender, EventArgs e)
         {
             try
             {
                 resizeSaveTimer.Stop();
-                if (!CanRecordPane()) return;
+                if (!IsShown()) return;
+                if (StillClosing())
+                {
+                    QueueResizeSave();
+                    return;
+                }
 
                 if (isFloatingHeightPending) ApplyFloatingHeight();
                 RecordPaneChange();
@@ -735,35 +762,43 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Records a resize still waiting for its delay now, for a close or shutdown that would otherwise drop it.
+        /// Records a change still waiting for its delay now, for a close or shutdown that would otherwise drop it.
         /// </summary>
-        private void FlushPendingSave()
+        private void FlushPendingSaves()
         {
             if (!resizeSaveTimer.Enabled) return;
             ResizeSaveTimer_Tick(null, null);
         }
 
         /// <summary>
-        /// Records the pane when the user docks it left or right; a pane that just floated is recorded
-        /// by the resize save instead, once the drag has settled.
+        /// True while a queued change must keep waiting because the file's close is still pending;
+        /// a pane still shown after the last re-check survived a cancelled close.
+        /// </summary>
+        private bool StillClosing()
+        {
+            if (!isPaneClosing) return false;
+            if (++closingRechecks < ClosingRecheckLimit) return true;
+
+            isPaneClosing = false;
+            return false;
+        }
+
+        /// <summary>
+        /// Queues the dock or float to be recorded; a pane that just floated is marked so the resize save
+        /// gives it the saved height first.
         /// </summary>
         private void Pane_DockPositionChanged(object sender, EventArgs e)
         {
             try
             {
-                if (!CanRecordPane()) return;
+                if (!IsShown()) return;
 
                 // Excel rejects property sets inside this handler and may still resize the pane as the drag
-                // ends, so the saved height is applied, and the pane recorded, by the resize save
-                if (pane.DockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating)
-                {
-                    isFloatingHeightPending = true;
-                    resizeSaveTimer.Stop();
-                    resizeSaveTimer.Start();
-                    return;
-                }
+                // ends, so the saved height is applied, and the pane recorded, by the resize save. Docking goes
+                // through the same delay, since Excel may change the width at the same time.
+                if (pane.DockPosition == Office.MsoCTPDockPosition.msoCTPDockPositionFloating) isFloatingHeightPending = true;
 
-                RecordPaneChange();
+                QueueResizeSave();
             }
             catch (Exception ex) { Diagnostics.Write("DockPositionChanged failed: " + ex); }
         }
@@ -851,16 +886,13 @@ namespace ContractsFileNavigator
         }
 
         /// <summary>
-        /// Records a pending resize, drops the pane, stops the timers and unhooks the Excel events, each
-        /// step on its own so one failure cannot skip the rest.
+        /// Records a pending change, stops the timers, unhooks the Excel and pane events and drops the
+        /// pane, each step on its own so one failure cannot skip the rest.
         /// </summary>
         private void ThisAddIn_Shutdown(object sender, System.EventArgs e)
         {
-            // A resize still waiting for its delay would otherwise be lost with the timer
-            RunLogged("Pending save", FlushPendingSave);
-
-            // Dropping the pane unhooks its handlers, so nothing the teardown does to it is recorded
-            RunLogged("Pane removal", RemovePane);
+            // A change still waiting for its delay would otherwise be lost with the timer
+            RunLogged("Pending saves", FlushPendingSaves);
 
             RunLogged("Resize timer stop", () => { resizeSaveTimer.Stop(); resizeSaveTimer.Dispose(); });
             RunLogged("Refresh timer stop", () => { refreshTimer.Stop(); refreshTimer.Dispose(); });
@@ -870,6 +902,8 @@ namespace ContractsFileNavigator
             RunLogged("WorkbookAfterSave unhook", () => this.Application.WorkbookAfterSave -= Application_WorkbookAfterSave);
             RunLogged("WorkbookBeforeClose unhook", () => this.Application.WorkbookBeforeClose -= Application_WorkbookBeforeClose);
             RunLogged("SheetActivate unhook", () => this.Application.SheetActivate -= Application_SheetActivate);
+
+            RunLogged("Pane removal", RemovePane);
 
             // A repeat count still pending would otherwise be lost with Excel
             Diagnostics.Flush();
